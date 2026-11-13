@@ -2,7 +2,7 @@ import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ACTING_SCOPE_KEY } from './acting-scope.decorator';
+import { ACTING_SCOPE_KEY, actingScopesOf } from './acting-scope.decorator';
 import type { ActingForScope } from './auth-principal';
 
 /**
@@ -19,8 +19,13 @@ export interface RouteInfo {
   fullPath: string;
   controller: AnyFn;
   handler: AnyFn;
-  /** What the policy actually enforces: the handler's scope, else the class's. */
+  /**
+   * What the policy actually enforces: the handler's scope, else the class's.
+   * For an any-of array this is the PRIMARY (first) scope; see `scopes`.
+   */
   scope: ActingForScope | undefined;
+  /** Every scope that opens the route (any-of); empty when unscoped. */
+  scopes: readonly ActingForScope[];
   handlerScope: ActingForScope | undefined;
   classScope: ActingForScope | undefined;
 }
@@ -75,10 +80,18 @@ export function collectRoutes(): RouteInfo[] {
         const methodPaths = Array.isArray(methodPath)
           ? methodPath
           : [methodPath];
-        const handlerScope = Reflect.getMetadata(ACTING_SCOPE_KEY, handler) as
-          ActingForScope | undefined;
-        const classScope = Reflect.getMetadata(ACTING_SCOPE_KEY, exported) as
-          ActingForScope | undefined;
+        type Declared = ActingForScope | readonly ActingForScope[] | undefined;
+        const handlerDeclared = Reflect.getMetadata(
+          ACTING_SCOPE_KEY,
+          handler,
+        ) as Declared;
+        const classDeclared = Reflect.getMetadata(
+          ACTING_SCOPE_KEY,
+          exported,
+        ) as Declared;
+        const handlerScope = actingScopesOf(handlerDeclared)[0];
+        const classScope = actingScopesOf(classDeclared)[0];
+        const scopes = actingScopesOf(handlerDeclared ?? classDeclared);
         // Same resolution as readActingScope (handler wins over class), so a
         // class-level decorator can never hide from the equality check below.
         const scope = handlerScope ?? classScope;
@@ -93,6 +106,7 @@ export function collectRoutes(): RouteInfo[] {
               controller: exported,
               handler,
               scope,
+              scopes,
               handlerScope,
               classScope,
             });

@@ -5,6 +5,7 @@ export type LegalDocumentType = (typeof LEGAL_DOCUMENT_TYPES)[number];
 export const LEGAL_ACCEPTANCE_METHODS = [
   'register_checkbox',
   'acceptance_gate',
+  'majority_release',
 ] as const;
 
 export type LegalAcceptanceMethod = (typeof LEGAL_ACCEPTANCE_METHODS)[number];

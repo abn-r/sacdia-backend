@@ -169,6 +169,11 @@ describe('DependentProfilesPurgeCronService selection', () => {
         frozen_at: { not: null },
         purged_at: null,
         purge_after: { lte: now },
+        // R6: majority-release freezes are never purged (NULL = legacy kept).
+        OR: [
+          { frozen_reason: null },
+          { frozen_reason: { not: 'majority_release' } },
+        ],
       },
       orderBy: { purge_after: 'asc' },
       take: 100,
@@ -894,6 +899,49 @@ describe('DependentProfilesPurgeCronService account-holder path (3a teen)', () =
     const summary = await ctx.service.purgeDue();
 
     expect(summary).toEqual({ purged: 0, failed: 1 });
+    expect(ctx.cache.bump).not.toHaveBeenCalled();
+  });
+});
+
+describe('R6: majority-release freezes are never auto-purged', () => {
+  /** Evaluates the SQL semantics of the only `frozen_reason` clauses used. */
+  const matches = (
+    where: { OR?: Array<{ frozen_reason: unknown }> },
+    reason: string | null,
+  ) =>
+    (where.OR ?? []).some((clause) => {
+      const c = clause.frozen_reason as null | { not: string };
+      if (c === null) return reason === null;
+      // SQL `col <> x`: NULL never matches.
+      return reason !== null && reason !== c.not;
+    });
+
+  it('the purge selection keeps legacy freezes and excludes frozen_reason majority_release, even past purge_after', async () => {
+    const ctx = setup();
+    await ctx.service.purgeDue(new Date('2027-06-01T00:00:00.000Z'));
+    const where = ctx.prisma.dependent_profiles.findMany.mock.calls[0][0].where;
+
+    expect(where.frozen_at).toEqual({ not: null });
+    expect(matches(where, null)).toBe(true); // legacy minor freeze: purged
+    expect(matches(where, 'majority_release')).toBe(false); // never purged
+  });
+
+  it('a majority-frozen row is not purged and nothing is written (flag state is irrelevant)', async () => {
+    const ctx = setup();
+    // The DB would return no row for the majority freeze (predicate above);
+    // simulate the DB honoring the where.
+    ctx.prisma.dependent_profiles.findMany.mockImplementation(
+      async (args: { where: { OR?: Array<{ frozen_reason: unknown }> } }) =>
+        [{ user_id: D1, frozen_reason: 'majority_release' }].filter((row) =>
+          matches(args.where, row.frozen_reason),
+        ),
+    );
+
+    const summary = await ctx.service.purgeDue();
+
+    expect(summary).toEqual({ purged: 0, failed: 0 });
+    expect(ctx.prisma.$transaction).not.toHaveBeenCalled();
+    expect(ctx.tx.users.update).not.toHaveBeenCalled();
     expect(ctx.cache.bump).not.toHaveBeenCalled();
   });
 });

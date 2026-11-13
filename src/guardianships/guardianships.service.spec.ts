@@ -69,7 +69,9 @@ function summaryRow(dependentId: string) {
   };
 }
 
-function setup(options: { guardianBirthday?: string | null } = {}) {
+function setup(
+  options: { guardianBirthday?: string | null; releaseEnabled?: boolean } = {},
+) {
   const guardianBirthday =
     options.guardianBirthday === undefined
       ? birthday(35)
@@ -132,12 +134,16 @@ function setup(options: { guardianBirthday?: string | null } = {}) {
       calls.push(committed ? 'bump-after-commit' : 'bump-before-commit');
     }),
   };
-  const legal = new LegalService(prisma as any);
+  const legal = new LegalService(prisma as any, {} as any, cache as any);
   const service = new GuardianshipsService(
     prisma as any,
     policy as any,
     legal,
     cache as any,
+    {
+      isEnabled: (flag: string) =>
+        flag === 'majority_release' && options.releaseEnabled === true,
+    } as any,
   );
   // After create, the service reads the summary back through the guardian row.
   prisma.guardianships.findFirst.mockImplementation(async () =>
@@ -509,6 +515,43 @@ describe('GuardianshipsService.listGuardianRelationshipTypes', () => {
 });
 
 describe('GuardianshipsService reads', () => {
+  describe('majority release lazy window (Phase 4)', () => {
+    const ofAge = (id: string) => {
+      const row = summaryRow(id);
+      row.dependent.birthday = new Date(`${birthday(19)}T00:00:00.000Z`);
+      return row;
+    };
+
+    it('flag on: a person already of age is dropped from the guardian list (cron has not revoked yet)', async () => {
+      const { service, prisma } = setup({ releaseEnabled: true });
+      prisma.guardianships.findMany.mockResolvedValue([
+        summaryRow('d-1'),
+        ofAge('d-2'),
+      ]);
+      const { dependents } = await service.listForGuardian(GUARDIAN);
+      expect(dependents.map((d) => d.user_id)).toEqual(['d-1']);
+    });
+
+    it('flag off: exact old behavior (nobody is dropped by age)', async () => {
+      const { service, prisma } = setup({ releaseEnabled: false });
+      prisma.guardianships.findMany.mockResolvedValue([
+        summaryRow('d-1'),
+        ofAge('d-2'),
+      ]);
+      const { dependents } = await service.listForGuardian(GUARDIAN);
+      expect(dependents.map((d) => d.user_id)).toEqual(['d-1', 'd-2']);
+    });
+
+    it('released rows are revoked, so the list query already excludes them and they stop counting against the limit', async () => {
+      const { service, prisma } = setup({ releaseEnabled: true });
+      prisma.guardianships.findMany.mockResolvedValue([]);
+      await service.listForGuardian(GUARDIAN);
+      expect(
+        prisma.guardianships.findMany.mock.calls[0][0].where,
+      ).toMatchObject({ consent_status: { not: 'revoked' } });
+    });
+  });
+
   it('lists visible dependents with the limit and a batched club membership query', async () => {
     const { service, prisma } = setup();
     prisma.guardianships.findMany.mockResolvedValue([

@@ -21,6 +21,7 @@ import {
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_CRON_ALERT,
   EMAIL_JOB_INVESTITURE_NOTICE,
+  EMAIL_JOB_MAJORITY_RELEASE,
   EMAIL_WORKER_OPTIONS,
   DataExportReadyJobPayload,
   EmailVerificationJobPayload,
@@ -28,6 +29,7 @@ import {
   AccountDeletionConfirmedJobPayload,
   CronAlertJobPayload,
   InvestitureNoticeJobPayload,
+  MajorityReleaseJobPayload,
   EmailJobPayload,
   SupportedEmailLocale,
 } from './email.queue';
@@ -71,9 +73,12 @@ const loadEmailRendering = lazyModule(() => {
     require('./templates/cron-alert') as typeof import('./templates/cron-alert');
   const { InvestitureNoticeEmail } =
     require('./templates/investiture-notice') as typeof import('./templates/investiture-notice');
+  const { MajorityReleaseEmail } =
+    require('./templates/majority-release') as typeof import('./templates/majority-release');
   return {
     render,
     React,
+    MajorityReleaseEmail,
     DataExportReadyEmail,
     EmailVerificationEmail,
     PasswordResetEmail,
@@ -325,6 +330,7 @@ export class EmailProcessor
       AccountDeletionConfirmedEmail,
       CronAlertEmail,
       InvestitureNoticeEmail,
+      MajorityReleaseEmail,
     } = loadEmailRendering();
     switch (jobName) {
       case EMAIL_JOB_DATA_EXPORT_READY: {
@@ -430,6 +436,27 @@ export class EmailProcessor
         });
         return {
           subject: notice.subject,
+          html: await render(element),
+          text: await render(element, { plainText: true }),
+        };
+      }
+
+      case EMAIL_JOB_MAJORITY_RELEASE: {
+        const d = data as MajorityReleaseJobPayload;
+        const lang = resolveLang(d.lang);
+        const subject = this.i18n.translate(
+          `emails.majority_release_subject_${d.kind}`,
+          { lang },
+        );
+        const element = React.createElement(MajorityReleaseEmail, {
+          kind: d.kind,
+          daysLeft: d.daysLeft,
+          deadlineAt: d.deadlineAt ? new Date(d.deadlineAt) : undefined,
+          majorityDate: d.majorityDate,
+          lang,
+        });
+        return {
+          subject,
           html: await render(element),
           text: await render(element, { plainText: true }),
         };

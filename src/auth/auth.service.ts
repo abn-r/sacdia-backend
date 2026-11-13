@@ -59,7 +59,10 @@ import {
   parseCalendarDate,
   toDateValue,
 } from '../common/age/age.util';
-import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import {
+  CountryAgePolicy,
+  CountryAgePolicyService,
+} from '../common/age/country-age-policy.service';
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
 import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
@@ -543,7 +546,7 @@ export class AuthService {
    * decision the JWT strategy takes on every later request).
    */
   private async loginPrincipalOf(userId: string): Promise<{
-    kind: 'user' | 'supervised_user' | 'age_unknown_user';
+    kind: 'user' | 'supervised_user' | 'age_unknown_user' | 'released_user';
     supervision: 'pending_guardian' | 'active' | null;
   }> {
     const state = await this.supervisedResolver.resolve(userId);
@@ -552,6 +555,9 @@ export class AuthService {
     }
     if (state.state === 'profile_incomplete') {
       return { kind: 'age_unknown_user', supervision: null };
+    }
+    if (state.state === 'released') {
+      return { kind: 'released_user', supervision: null };
     }
     return { kind: 'user', supervision: null };
   }
@@ -1071,7 +1077,7 @@ export class AuthService {
         : fullyResolved;
     // Phase 7: what the actor can attempt, computed per request over the
     // (possibly stripped) profile. Pure and never cached: the cache entry keeps
-    // the `ResolvedAuthorizationProfile` shape and the `auth:context:v8` key.
+    // the `ResolvedAuthorizationProfile` shape and the `auth:context:v9` key.
     const actorSummary = computeActorAuthorizationSummary(resolved);
     const acting = principal?.acting_for === true;
     const supervisionStatus =
@@ -1079,6 +1085,8 @@ export class AuthService {
     const ageUnknown = principal?.kind === 'age_unknown_user';
     // A child's paired phone (3b): no family of its own, no supervision state.
     const isDevice = principal?.kind === 'linked_device';
+    // Phase 4: an adult released at majority that has not completed the release.
+    const isReleased = principal?.kind === 'released_user';
     const [
       signedUserImage,
       legal,
@@ -1088,20 +1096,26 @@ export class AuthService {
       device,
       emailState,
       pendingClubMembership,
+      release,
     ] = await Promise.all([
       this.resolvePrivateProfilePicture(resolved.profile.user_image),
       // Outside the authorization cache: acceptance must reflect the DB right away.
-      this.legalService.getStatus(userId),
+      // A released adult only counts their own majority_release rows (Phase 4).
+      isReleased
+        ? this.legalService.getStatus(userId, undefined, { releaseOnly: true })
+        : this.legalService.getStatus(userId),
       // Hidden while acting (a dependent has no family of its own to show),
       // for supervised teens and for an unknown age (neither is a guardian).
-      acting || supervisionStatus || ageUnknown || isDevice
+      acting || supervisionStatus || ageUnknown || isDevice || isReleased
         ? Promise.resolve(null)
         : this.loadFamilySummary(userId),
       supervisionStatus
         ? this.supervisionState.describe(userId, supervisionStatus)
         : Promise.resolve(null),
-      // A device child is always anonymous for analytics (privacy 6.1).
-      isDevice
+      // A device child is always anonymous for analytics (privacy 6.1), and so
+      // is a released adult until the release completes (Phase 4, FP4-21):
+      // they are an adult by age but have not accepted the fresh terms yet.
+      isDevice || isReleased
         ? Promise.resolve(true)
         : this.isAnalyticsAnonymous(
             resolved.profile.birthday,
@@ -1122,6 +1136,7 @@ export class AuthService {
       (isDevice || supervisionStatus === 'active') && !resolved.legacy.club
         ? this.loadPendingClubMembership(userId)
         : Promise.resolve(null),
+      isReleased ? this.loadReleaseInfo(userId) : Promise.resolve(null),
     ]);
 
     return {
@@ -1159,19 +1174,23 @@ export class AuthService {
           supervision,
           // Only a linked device carries this block (3b); absent otherwise.
           ...(isDevice ? { device } : {}),
+          // Only a released adult carries this block (Phase 4); absent otherwise.
+          ...(isReleased ? { release } : {}),
         },
         // profile_incomplete: unknown age (NULL birthday, post-registration
         // open). The app finishes the post-registration before anything else.
         // device: a child's paired phone (3b).
         mode: isDevice
           ? 'device'
-          : ageUnknown
-            ? 'profile_incomplete'
-            : !supervisionStatus
-              ? 'adult'
-              : supervisionStatus === 'active'
-                ? 'teen_supervised'
-                : 'teen_pending',
+          : isReleased
+            ? 'released'
+            : ageUnknown
+              ? 'profile_incomplete'
+              : !supervisionStatus
+                ? 'adult'
+                : supervisionStatus === 'active'
+                  ? 'teen_supervised'
+                  : 'teen_pending',
         family_features: this.familyFlags.getAll(),
         analytics_anonymous: analyticsAnonymous,
         // false = the account has an email that was never confirmed. Profiles
@@ -1180,6 +1199,52 @@ export class AuthService {
           ? (emailState?.email_verified ?? false)
           : null,
       },
+    };
+  }
+
+  /**
+   * The `principal.release` block of a released adult (Phase 4): what the app
+   * needs to render the release flow. Dates are ISO strings; `deadline_at` and
+   * `released_at` are null until the cron persisted the release (lazy gate).
+   * A frozen majority release never carries `purge_after` (ruling R6).
+   */
+  private async loadReleaseInfo(userId: string): Promise<{
+    status: 'pending' | 'frozen';
+    released_at: string | null;
+    deadline_at: string | null;
+    frozen_at: string | null;
+    purge_after: string | null;
+    needs_acceptance: boolean;
+    needs_email: boolean;
+    login_method: 'email' | 'handle' | null;
+  }> {
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: {
+        email: true,
+        supervised_login: { select: { method: true } },
+        dependent_profile: {
+          select: {
+            released_at: true,
+            release_deadline_at: true,
+            release_accepted_at: true,
+            frozen_at: true,
+            purge_after: true,
+          },
+        },
+      },
+    });
+    const profile = user?.dependent_profile ?? null;
+    const method = user?.supervised_login?.method;
+    return {
+      status: profile?.frozen_at ? 'frozen' : 'pending',
+      released_at: profile?.released_at?.toISOString() ?? null,
+      deadline_at: profile?.release_deadline_at?.toISOString() ?? null,
+      frozen_at: profile?.frozen_at?.toISOString() ?? null,
+      purge_after: profile?.purge_after?.toISOString() ?? null,
+      needs_acceptance: !profile?.release_accepted_at,
+      needs_email: !user?.email,
+      login_method: method === 'handle' || method === 'email' ? method : null,
     };
   }
 
@@ -1266,17 +1331,48 @@ export class AuthService {
   private async loadFamilySummary(
     userId: string,
   ): Promise<{ is_guardian: boolean; dependents_count: number }> {
-    const dependentsCount = await this.prisma.guardianships.count({
-      where: {
-        guardian_user_id: userId,
-        is_custodian: false,
-        is_test_data: false,
-        consent_status: { in: ['pending', 'verified'] },
-        dependent: {
-          dependent_profile: { is: { frozen_at: null, purged_at: null } },
-        },
+    const where = {
+      guardian_user_id: userId,
+      is_custodian: false,
+      is_test_data: false,
+      consent_status: { in: ['pending', 'verified'] as string[] },
+      dependent: {
+        dependent_profile: { is: { frozen_at: null, purged_at: null } },
       },
+    };
+
+    // Phase 4 lazy window (flag on): between the country's local midnight and
+    // the release cron a person of age is already independent, so the summary
+    // drops them like GuardianshipsService.listForGuardian does.
+    if (!this.familyFlags.isEnabled('majority_release')) {
+      const dependentsCount = await this.prisma.guardianships.count({ where });
+      return {
+        is_guardian: dependentsCount > 0,
+        dependents_count: dependentsCount,
+      };
+    }
+
+    const rows = await this.prisma.guardianships.findMany({
+      where,
+      select: { dependent: { select: { birthday: true, country_id: true } } },
     });
+    const policies = new Map<number | null, CountryAgePolicy>();
+    let dependentsCount = 0;
+    for (const row of rows) {
+      const { birthday, country_id: countryId } = row.dependent;
+      if (birthday) {
+        if (!policies.has(countryId)) {
+          policies.set(
+            countryId,
+            await this.countryAgePolicy.getPolicy(countryId),
+          );
+        }
+        const policy = policies.get(countryId) as CountryAgePolicy;
+        if (ageToday(birthday, policy.timeZone) >= policy.ageOfMajority)
+          continue;
+      }
+      dependentsCount += 1;
+    }
 
     return {
       is_guardian: dependentsCount > 0,

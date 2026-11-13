@@ -96,7 +96,15 @@ export const SUPERVISED_STATE_USER_SELECT = {
   country_id: true,
   supervised_login: { select: { disabled_at: true, method: true } },
   dependent_profile: {
-    select: { frozen_at: true, purged_at: true },
+    select: {
+      frozen_at: true,
+      purged_at: true,
+      // Phase 4 (release at majority).
+      released_at: true,
+      release_accepted_at: true,
+      release_completed_at: true,
+      frozen_reason: true,
+    },
   },
   guardianships_as_dependent: {
     where: {
@@ -137,6 +145,7 @@ export type SupervisedStateUser = Prisma.usersGetPayload<{
 export function deriveSupervisedState(
   user: SupervisedStateUser,
   countryPolicy: CountryAgePolicy | null,
+  options: { releaseEnabled?: boolean } = {},
 ): ResolvedFromDatabase {
   if (!user.birthday) {
     return {
@@ -148,6 +157,26 @@ export function deriveSupervisedState(
 
   const loginMethod = loginMethodOf(user.supervised_login);
   if (ageToday(user.birthday, policy.timeZone) >= policy.ageOfMajority) {
+    // Phase 4 lazy gate (FP4-16): a TRACKED person (dependent_profiles row) who
+    // has not completed the release is gated from the moment they reach
+    // majority, even if the cron has not persisted released_at yet. A frozen
+    // adult is released:frozen instead of leaking as ADULT. Flag off: ignored.
+    const tracked = user.dependent_profile;
+    if (
+      options.releaseEnabled &&
+      tracked &&
+      !tracked.purged_at &&
+      !tracked.release_completed_at
+    ) {
+      return {
+        state: {
+          state: 'released',
+          phase: tracked.frozen_at ? 'frozen' : 'pending',
+          ...loginMethod,
+        },
+        timeZone: policy.timeZone,
+      };
+    }
     return {
       state: { ...ADULT, ...loginMethod },
       timeZone: policy.timeZone,
@@ -194,6 +223,11 @@ export function deriveSupervisedState(
  *                 the post-registration anyway); a minor one, a teen.
  *  - blocked:     a minor whose dependent profile is frozen/purged, or whose
  *                 supervised login was disabled.
+ *  - released (Phase 4, flag FAMILY_MAJORITY_RELEASE_ENABLED): a TRACKED
+ *                 person (dependent_profiles row) of age who has not
+ *                 completed the release. `pending` until they accept the
+ *                 fresh terms (+ have an email), `frozen` when the deadline
+ *                 passed. Frozen still logs in (ruling R6) and thaws on accept.
  *  - supervised:  any other minor. `active` when a VERIFIED, non-test,
  *                 non-revoked, NON-custodian guardianship exists, otherwise
  *                 `pending_guardian` (custody and unverified links do not count).
@@ -251,13 +285,19 @@ export class SupervisedPrincipalResolver {
    */
   private applyTeenLoginFlag(state: SupervisedState): SupervisedState {
     if (
-      (state.state === 'supervised' || state.state === 'adult') &&
+      (state.state === 'supervised' ||
+        state.state === 'adult' ||
+        state.state === 'released') &&
       state.login_method === 'handle' &&
       !this.familyFlags.isEnabled('teen_login')
     ) {
       return TEEN_LOGIN_DISABLED;
     }
     return state;
+  }
+
+  private releaseEnabled(): boolean {
+    return this.familyFlags.isEnabled('majority_release');
   }
 
   private async resolveCached(userId: string): Promise<SupervisedState> {
@@ -269,7 +309,11 @@ export class SupervisedPrincipalResolver {
         // read no payload under it (a mutation in between bumps past it).
         epoch = await this.cache.initEpoch(userId);
       } else {
-        const cached = await this.cache.getState(userId, epoch);
+        const cached = await this.cache.getState(
+          userId,
+          epoch,
+          this.releaseEnabled(),
+        );
         if (cached) {
           return cached;
         }
@@ -283,7 +327,13 @@ export class SupervisedPrincipalResolver {
 
     if (epoch !== null) {
       try {
-        await this.cache.setState(userId, epoch, state, timeZone);
+        await this.cache.setState(
+          userId,
+          epoch,
+          state,
+          timeZone,
+          this.releaseEnabled(),
+        );
       } catch (error) {
         this.logCacheUnavailable(error);
       }
@@ -365,7 +415,9 @@ export class SupervisedPrincipalResolver {
       const policy = user.birthday
         ? await this.countryAgePolicy.getPolicy(user.country_id)
         : null;
-      return deriveSupervisedState(user, policy);
+      return deriveSupervisedState(user, policy, {
+        releaseEnabled: this.releaseEnabled(),
+      });
     } catch (error) {
       if (error instanceof AppException) {
         throw error;

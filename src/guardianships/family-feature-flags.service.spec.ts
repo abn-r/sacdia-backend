@@ -17,6 +17,7 @@ describe('FamilyFeatureFlagsService', () => {
       teen_login: false,
       linked_device: false,
       director_create_minor: false,
+      majority_release: false,
     });
   });
 
@@ -25,12 +26,28 @@ describe('FamilyFeatureFlagsService', () => {
       FAMILY_TEEN_LOGIN_ENABLED: true,
       FAMILY_LINKED_DEVICE_ENABLED: 'true',
       FAMILY_DIRECTOR_CREATE_MINOR_ENABLED: false,
+      FAMILY_MAJORITY_RELEASE_ENABLED: 'true',
     });
     expect(service.getAll()).toEqual({
       teen_login: true,
       linked_device: true,
       director_create_minor: false,
+      majority_release: true,
     });
+  });
+
+  it('reads the majority release dry-run switch (default off)', () => {
+    expect(build({}).isMajorityReleaseDryRun()).toBe(false);
+    expect(
+      build({
+        FAMILY_MAJORITY_RELEASE_DRY_RUN: true,
+      }).isMajorityReleaseDryRun(),
+    ).toBe(true);
+    expect(
+      build({
+        FAMILY_MAJORITY_RELEASE_DRY_RUN: 'true',
+      }).isMajorityReleaseDryRun(),
+    ).toBe(true);
   });
 
   it('treats unknown strings as off', () => {

@@ -153,8 +153,8 @@ WHERE r.role_name = 'member'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities (read only — attendance:manage intentionally withheld:
     -- members must not be able to mark attendance for other members via
@@ -245,8 +245,8 @@ WHERE r.role_name = 'counselor'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities
     'activities:read',
@@ -353,8 +353,8 @@ WHERE r.role_name = 'instructor'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities (read + attendance)
     'activities:read',
@@ -436,8 +436,8 @@ WHERE r.role_name = 'secretary'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities
     'activities:read',
@@ -585,8 +585,8 @@ WHERE r.role_name = 'treasurer'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities
     'activities:read',
@@ -714,8 +714,8 @@ WHERE r.role_name = 'secretary-treasurer'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities
     'activities:read',
@@ -865,8 +865,8 @@ WHERE r.role_name = 'deputy-director'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities
     'activities:read',
@@ -1001,8 +1001,8 @@ WHERE r.role_name = 'director'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities
     'activities:read',
@@ -1398,8 +1398,8 @@ WHERE r.role_name = 'assistant-lf'
     'emergency_contacts:update',
     'health:read',
     'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
+    'guardianship:read',
+    'guardianship:update',
 
     -- Activities
     'activities:read',

@@ -13,6 +13,8 @@ import {
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
   DEVICE_SCOPES,
+  RELEASED_FROZEN_SCOPES,
+  RELEASED_PENDING_SCOPES,
   TEEN_PENDING_SCOPES,
   TEEN_SCOPES,
 } from './auth-principal';
@@ -29,6 +31,15 @@ class ClassScopedController {
   @ActingScope('profile:write')
   handlerWins() {
     return 'b';
+  }
+}
+
+@Controller('probe-anyof')
+class AnyOfController {
+  @Get('d')
+  @ActingScope(['self:read', 'release:read'])
+  anyOf() {
+    return 'd';
   }
 }
 
@@ -75,6 +86,9 @@ describe('acting scope metadata and policy', () => {
         'account:manage',
         'credential:read',
         'club:context',
+        'release:read',
+        'release:email',
+        'data:export',
       ].sort(),
     );
   });
@@ -417,6 +431,100 @@ describe('acting scope metadata and policy', () => {
       expect(() =>
         assertActingScope(reflector, context, newcomer),
       ).not.toThrow();
+    });
+  });
+
+  describe('any-of scope arrays (Phase 4)', () => {
+    const context = contextFor(AnyOfController, 'anyOf');
+
+    it('readActingScope returns the declared array', () => {
+      expect(readActingScope(reflector, context)).toEqual([
+        'self:read',
+        'release:read',
+      ]);
+    });
+
+    it('allows a principal holding ANY one of the scopes', () => {
+      expect(
+        isActingScopeAllowed(reflector, context, {
+          kind: 'released_user',
+          scopes: ['release:read'],
+        } as any),
+      ).toBe(true);
+      expect(
+        isActingScopeAllowed(reflector, context, {
+          kind: 'supervised_user',
+          scopes: ['self:read'],
+        } as any),
+      ).toBe(true);
+    });
+
+    it('denies a principal holding none, reporting the primary scope', () => {
+      try {
+        assertActingScope(reflector, context, {
+          kind: 'released_user',
+          scopes: ['data:export'],
+        } as any);
+        throw new Error('expected a denial');
+      } catch (error) {
+        expect((error as any).getResponse().details).toEqual({
+          required_scope: 'self:read',
+          kind: 'released_user',
+        });
+      }
+    });
+  });
+
+  describe('released_user', () => {
+    const released = (scopes: readonly string[]) =>
+      ({ kind: 'released_user', scopes }) as any;
+
+    it('is denied on an unscoped route with PRINCIPAL_SCOPE_DENIED {kind: released_user}', () => {
+      const context = contextFor(UnscopedController, 'noScope');
+      for (const scopes of [RELEASED_PENDING_SCOPES, RELEASED_FROZEN_SCOPES]) {
+        try {
+          assertActingScope(reflector, context, released(scopes));
+          throw new Error('expected a denial');
+        } catch (error) {
+          expect(error).toMatchObject({
+            code: ErrorCode.PRINCIPAL_SCOPE_DENIED,
+            status: 403,
+          });
+          expect((error as any).getResponse().details).toEqual({
+            required_scope: null,
+            kind: 'released_user',
+          });
+        }
+      }
+    });
+
+    it('pending and frozen sets are identical (R1 thaw) and carry only the release surface', () => {
+      expect([...RELEASED_FROZEN_SCOPES].sort()).toEqual(
+        [...RELEASED_PENDING_SCOPES].sort(),
+      );
+      expect([...RELEASED_PENDING_SCOPES].sort()).toEqual(
+        [
+          'release:read',
+          'legal:accept',
+          'release:email',
+          'data:export',
+          'account:manage',
+        ].sort(),
+      );
+      for (const forbidden of [
+        'self:read',
+        'profile:write',
+        'member:read',
+        'member:write',
+        'credential:read',
+        'club:context',
+        'health:read',
+        'classes:write',
+        'honors:write',
+        'self:password',
+      ]) {
+        expect(RELEASED_PENDING_SCOPES).not.toContain(forbidden);
+      }
     });
   });
 });

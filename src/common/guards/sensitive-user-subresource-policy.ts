@@ -1,10 +1,7 @@
 import type { PermissionKey } from '../authorization/generated/permission-keys';
 
 export type SensitiveUserSubresourceFamily =
-  | 'health'
-  | 'emergency_contacts'
-  | 'legal_representative'
-  | 'post_registration';
+  'health' | 'emergency_contacts' | 'guardianship' | 'post_registration';
 
 export type SensitiveUserSubresourceMode = 'read' | 'update';
 
@@ -13,6 +10,13 @@ export type SensitiveUserSubresourcePolicy = {
   legacyFallbackPermission: PermissionKey;
 };
 
+/**
+ * `users:*` OR fallback, kept until USERS_LEGACY_OR_SUNSET_DATE (2027-03-31).
+ * Removal on that date is ONE change: make `legacyFallbackPermission` unused in
+ * `permission-requirements.ts` and `admin-users.service.ts#canReadSensitiveFamily`
+ * (or empty this map) so only the fine `<family>:<mode>` key (e.g.
+ * `guardianship:read|update`) is accepted. Do not remove before that date.
+ */
 export const LEGACY_PERMISSION_BY_MODE: Record<
   SensitiveUserSubresourceMode,
   PermissionKey

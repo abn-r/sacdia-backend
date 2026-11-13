@@ -7,6 +7,7 @@ import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { DependentPushRouterService } from './dependent-push-router.service';
 import { ClubDataRecipientsService } from './club-data-recipients.service';
+import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 import {
   CountryAgePolicyService,
   DEFAULT_COUNTRY_AGE_POLICY,
@@ -130,6 +131,11 @@ describe('NotificationsService', () => {
       {
         provide: CountryAgePolicyService,
         useValue: mockCountryAgePolicy,
+      },
+      // Phase 4: the recipients gate reads the majority-release flag (off here).
+      {
+        provide: FamilyFeatureFlagsService,
+        useValue: { isEnabled: () => false },
       },
     ];
 

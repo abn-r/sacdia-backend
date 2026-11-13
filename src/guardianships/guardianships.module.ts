@@ -5,11 +5,16 @@ import { LegalModule } from '../legal/legal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
-import { DependentClaimCodesController } from './dependent-claim-codes.controller';
+import { AdultClaimIssueService } from './adult-claim-issue.service';
+import {
+  DependentAdultClaimCodesController,
+  DependentClaimCodesController,
+} from './dependent-claim-codes.controller';
 import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
 import { DirectorDependentsController } from './director-dependents.controller';
 import { DirectorDependentsService } from './director-dependents.service';
 import { FamilyAgeTransitionsCronService } from './family-age-transitions-cron.service';
+import { FamilyMajorityReleaseCronService } from './family-majority-release-cron.service';
 import { PendingTeenCronService } from './pending-teen-cron.service';
 import { FamilyFeatureFlagsModule } from './family-feature-flags.module';
 import { GuardianEvidenceService } from './guardian-evidence.service';
@@ -53,6 +58,7 @@ import { SupervisionStateService } from './supervision-state.service';
   controllers: [
     GuardianshipsController,
     DependentClaimCodesController,
+    DependentAdultClaimCodesController,
     DirectorDependentsController,
     TeenLinkCodesController,
   ],
@@ -60,6 +66,8 @@ import { SupervisionStateService } from './supervision-state.service';
     GuardianshipsService,
     LinkCodesService,
     LinkCodeFailureCounter,
+    // Phase 4: access codes for released, account-less adults.
+    AdultClaimIssueService,
     GuardianshipLifecycleService,
     GuardianNotificationsService,
     GuardianEvidenceService,
@@ -68,6 +76,8 @@ import { SupervisionStateService } from './supervision-state.service';
     PendingTeenCronService,
     // Birthday-13 nudge + majority / expiry sweep of the linked devices (3c).
     FamilyAgeTransitionsCronService,
+    // Phase 4: notice, release, reminders and freeze at majority (flagged).
+    FamilyMajorityReleaseCronService,
     SupervisionStateService,
     GuardianPowersPolicy,
     DependentActionLimiter,
@@ -90,6 +100,8 @@ import { SupervisionStateService } from './supervision-state.service';
     GuardianshipsService,
     GuardianshipLifecycleService,
     LinkCodesService,
+    LinkCodeFailureCounter,
+    AdultClaimIssueService,
     GuardianNotificationsService,
     GuardianEvidenceService,
     FamilyFeatureFlagsModule,

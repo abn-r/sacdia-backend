@@ -177,15 +177,6 @@ describe('Admin Users Detail E2E', () => {
         relationship_type_id: 4,
       },
     ],
-    legal_representative: {
-      id: 41,
-      representative_user_id: null,
-      relationship_type_id: 8,
-      name: 'Carlos',
-      paternal_last_name: 'Tutor',
-      maternal_last_name: 'Perez',
-      phone: '555-2222',
-    },
     users_allergies: [
       {
         allergy_id: 1,
@@ -277,7 +268,7 @@ describe('Admin Users Detail E2E', () => {
       medicines: [{ medicine_id: 3, name: 'Salbutamol' }],
     });
     expect(body.data.emergency_contacts).toBeNull();
-    expect(body.data.legal_representative).toBeNull();
+    expect(body.data).not.toHaveProperty('legal_representative');
     expect(body.data.post_registration).toBeNull();
   });
 
@@ -302,15 +293,7 @@ describe('Admin Users Detail E2E', () => {
       medicines: [{ medicine_id: 3, name: 'Salbutamol' }],
     });
     expect(body.data.emergency_contacts).toHaveLength(1);
-    expect(body.data.legal_representative).toEqual({
-      id: 41,
-      representative_user_id: null,
-      relationship_type_id: 8,
-      name: 'Carlos',
-      paternal_last_name: 'Tutor',
-      maternal_last_name: 'Perez',
-      phone: '555-2222',
-    });
+    expect(body.data).not.toHaveProperty('legal_representative');
     expect(body.data.post_registration).toEqual({
       complete: false,
       profile_picture_complete: true,
@@ -336,7 +319,7 @@ describe('Admin Users Detail E2E', () => {
 
     expect(body.data.health).toBeNull();
     expect(body.data.emergency_contacts).toBeNull();
-    expect(body.data.legal_representative).toBeNull();
+    expect(body.data).not.toHaveProperty('legal_representative');
     expect(body.data.post_registration).toBeNull();
   });
 

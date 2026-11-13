@@ -751,7 +751,7 @@ describe('family profiles phase 3: edge-case matrix E3-1..E3-42', () => {
       'src/guardianships/dependent-profiles-purge-cron.service.ts':
         'nulls the handle when the account is purged',
       'src/admin/admin-users.service.ts':
-        'family_access block for readers of the legal_representative family',
+        'family_access block for readers of the guardianship family',
       'src/better-auth/better-auth.service.ts':
         'looks the handle up at login (lowercased), never returns it',
       'src/main.ts': 'request-body redaction list',

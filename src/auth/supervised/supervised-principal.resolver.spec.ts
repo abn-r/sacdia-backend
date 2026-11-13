@@ -37,7 +37,14 @@ interface UserRow {
     disabled_at: Date | null;
     method?: 'email' | 'handle';
   } | null;
-  dependent_profile: { frozen_at: Date | null; purged_at: Date | null } | null;
+  dependent_profile: {
+    frozen_at: Date | null;
+    purged_at: Date | null;
+    released_at?: Date | null;
+    release_accepted_at?: Date | null;
+    release_completed_at?: Date | null;
+    frozen_reason?: string | null;
+  } | null;
   guardianships_as_dependent: Array<{ guardianship_id: string }>;
   access_panel?: boolean | null;
   users_pr?: { complete: boolean } | null;
@@ -81,7 +88,10 @@ describe('SupervisedPrincipalResolver', () => {
     policy = {
       getPolicy: jest.fn().mockResolvedValue({ ...DEFAULT_COUNTRY_AGE_POLICY }),
     };
-    flags = { isEnabled: jest.fn().mockReturnValue(true) };
+    // Every flag on EXCEPT the Phase 4 majority release (tested explicitly below).
+    flags = {
+      isEnabled: jest.fn((flag: string) => flag !== 'majority_release'),
+    };
     epochs = new ActingForCache(manager as any);
     resolver = new SupervisedPrincipalResolver(
       prisma as any,
@@ -409,7 +419,9 @@ describe('SupervisedPrincipalResolver', () => {
         cause: 'teen_login_disabled',
       });
 
-      flags.isEnabled.mockReturnValue(true);
+      flags.isEnabled.mockImplementation(
+        (flag: string) => flag !== 'majority_release',
+      );
       expect((await resolver.resolve('u1')).state).toBe('supervised');
 
       expect(prisma.users.findUnique).toHaveBeenCalledTimes(1);
@@ -422,7 +434,7 @@ describe('SupervisedPrincipalResolver', () => {
       );
       await resolver.resolve('u1');
       expect(manager.set).toHaveBeenCalledWith(
-        expect.stringMatching(/^supv:v3:u1:/),
+        expect.stringMatching(/^supv:v4:u1:/),
         {
           state: 'supervised',
           supervision: 'pending_guardian',
@@ -516,7 +528,7 @@ describe('SupervisedPrincipalResolver', () => {
       jest.setSystemTime(new Date('2026-10-21T05:59:30.000Z'));
       await resolver.resolve('u1');
       expect(manager.set).toHaveBeenCalledWith(
-        expect.stringMatching(/^supv:v3:u1:/),
+        expect.stringMatching(/^supv:v4:u1:/),
         { state: 'supervised', supervision: 'pending_guardian' },
         30_000,
       );
@@ -586,6 +598,137 @@ describe('SupervisedPrincipalResolver', () => {
         code: ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
         status: 503,
       });
+    });
+  });
+
+  describe('Phase 4 release gate (FAMILY_MAJORITY_RELEASE_ENABLED)', () => {
+    const ADULT_BIRTHDAY = date('2000-01-01');
+    const TEEN_BIRTHDAY = date('2011-06-01');
+    const enableRelease = (on: boolean) =>
+      flags.isEnabled.mockImplementation(
+        (flag: string) =>
+          flag === 'teen_login' || (on && flag === 'majority_release'),
+      );
+    const profile = (extra: Record<string, Date | string | null> = {}) => ({
+      frozen_at: null,
+      purged_at: null,
+      released_at: null,
+      release_accepted_at: null,
+      release_completed_at: null,
+      frozen_reason: null,
+      ...extra,
+    });
+    const ONE = new Date('2026-10-01T00:00:00.000Z');
+
+    type Case = [string, Date | null, ReturnType<typeof profile> | null];
+    const cases: Case[] = [
+      ['adult, no profile row', ADULT_BIRTHDAY, null],
+      ['adult, unreleased row', ADULT_BIRTHDAY, profile()],
+      [
+        'adult, released pending',
+        ADULT_BIRTHDAY,
+        profile({ released_at: ONE }),
+      ],
+      [
+        'adult, completed',
+        ADULT_BIRTHDAY,
+        profile({
+          released_at: ONE,
+          release_accepted_at: ONE,
+          release_completed_at: ONE,
+        }),
+      ],
+      [
+        'adult, frozen with released_at',
+        ADULT_BIRTHDAY,
+        profile({
+          released_at: ONE,
+          frozen_at: ONE,
+          frozen_reason: 'majority_release',
+        }),
+      ],
+      [
+        'adult, frozen without released_at (aged while frozen)',
+        ADULT_BIRTHDAY,
+        profile({ frozen_at: ONE }),
+      ],
+      ['adult, purged row', ADULT_BIRTHDAY, profile({ purged_at: ONE })],
+    ];
+    const expectedOn: Record<string, unknown> = {
+      'adult, no profile row': { state: 'adult' },
+      'adult, unreleased row': { state: 'released', phase: 'pending' },
+      'adult, released pending': { state: 'released', phase: 'pending' },
+      'adult, completed': { state: 'adult' },
+      'adult, frozen with released_at': { state: 'released', phase: 'frozen' },
+      'adult, frozen without released_at (aged while frozen)': {
+        state: 'released',
+        phase: 'frozen',
+      },
+      'adult, purged row': { state: 'adult' },
+    };
+
+    it.each(cases)('flag on: %s', async (label, birthday, row) => {
+      enableRelease(true);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday, dependent_profile: row }),
+      );
+      expect(await resolver.resolve('u1')).toEqual(expectedOn[label]);
+    });
+
+    it.each(cases)(
+      'flag off: %s keeps the exact old behavior (adult, never released)',
+      async (_label, birthday, row) => {
+        enableRelease(false);
+        prisma.users.findUnique.mockResolvedValue(
+          user({ birthday, dependent_profile: row }),
+        );
+        expect(await resolver.resolve('u1')).toEqual({ state: 'adult' });
+      },
+    );
+
+    it('a minor is never released, whatever the row says (flag on)', async () => {
+      enableRelease(true);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: TEEN_BIRTHDAY, dependent_profile: profile() }),
+      );
+      expect((await resolver.resolve('u1')).state).toBe('supervised');
+    });
+
+    it('carries the login method; a handle login is still cut while teen_login is off', async () => {
+      enableRelease(true);
+      prisma.users.findUnique.mockResolvedValue(
+        user({
+          birthday: ADULT_BIRTHDAY,
+          dependent_profile: profile(),
+          supervised_login: { disabled_at: null, method: 'handle' },
+        }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'released',
+        phase: 'pending',
+        login_method: 'handle',
+      });
+      flags.isEnabled.mockReturnValue(false);
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'teen_login_disabled',
+      });
+    });
+
+    it('caches under supv:v4r while the flag is on and supv:v4 while off (a flip never reads the other)', async () => {
+      enableRelease(true);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: ADULT_BIRTHDAY, dependent_profile: profile() }),
+      );
+      await resolver.resolve('u1');
+      expect(manager.set).toHaveBeenCalledWith(
+        expect.stringMatching(/^supv:v4r:u1:/),
+        { state: 'released', phase: 'pending' },
+        60_000,
+      );
+      enableRelease(false);
+      expect(await resolver.resolve('u1')).toEqual({ state: 'adult' });
+      expect(prisma.users.findUnique).toHaveBeenCalledTimes(2);
     });
   });
 });

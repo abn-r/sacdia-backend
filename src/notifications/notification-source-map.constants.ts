@@ -95,6 +95,13 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   'family:guardian_linked': 'approvals',
   'family:teen_reminder': 'reminders',
   'family:age_nudge': 'reminders',
+  // Phase 4 (release at majority). `family:majority` is MANDATORY: these notices
+  // affect the account (legal acceptance, freeze), nobody can mute them.
+  'family:majority:notice': 'approvals',
+  'family:majority:released': 'approvals',
+  'family:majority:reminder': 'reminders',
+  'family:majority:frozen': 'approvals',
+  'family:majority:handover': 'approvals',
   // Member-of-month (director notification = approval-adjacent)
   'units:member_of_month': 'approvals',
   'units:member_of_month_director': 'approvals',
@@ -138,10 +145,17 @@ export function getCategoryForSource(
  *  - `admin`: admin-initiated sends;
  *  - `family:security`: security notices to the guardians of a supervised teen
  *    (new session, password change/reset, lockout, login enabled/disabled). A
- *    guardian must never be able to mute these.
+ *    guardian must never be able to mute these;
+ *  - `family:majority`: release-at-majority notices (30-day notice, released,
+ *    reminders, freeze, claim-code handover). They concern the legal status of
+ *    the account, so they cannot be muted.
  * A prefix matches the source itself and anything below it (`prefix:...`).
  */
-export const MANDATORY_SOURCE_PREFIXES = ['admin', 'family:security'] as const;
+export const MANDATORY_SOURCE_PREFIXES = [
+  'admin',
+  'family:security',
+  'family:majority',
+] as const;
 
 /** @deprecated use {@link MANDATORY_SOURCE_PREFIXES}. */
 export const ADMIN_SOURCE_PREFIXES = MANDATORY_SOURCE_PREFIXES;

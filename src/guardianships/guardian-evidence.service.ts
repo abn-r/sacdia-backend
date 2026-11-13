@@ -269,7 +269,7 @@ export class GuardianEvidenceService {
   }
 
   // ---------------------------------------------------------------------------
-  // Admin (users:read_detail + legal_representative sensitive read, guard)
+  // Admin (users:read_detail + guardianship sensitive read, guard)
   // ---------------------------------------------------------------------------
 
   /**

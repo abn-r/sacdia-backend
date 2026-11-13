@@ -2605,8 +2605,6 @@ model users {
   investiture_validation_history       investiture_validation_history[]
   inventory_evidence_uploaded          inventory_evidence_files[]            @relation("inventory_evidence_uploaded_by")
   inventory_history_performed          inventory_history[]                   @relation("inventory_history_performer")
-  as_legal_representative              legal_representatives[]               @relation("representative")
-  legal_representative                 legal_representatives?                @relation("user_legal_rep")
   member_insurances_created            member_insurances[]                   @relation("member_insurances_created_by")
   member_insurances_modified           member_insurances[]                   @relation("member_insurances_modified_by")
   member_insurances                    member_insurances[]
@@ -2896,7 +2894,9 @@ model legal_acceptances {
   user        users  @relation("legal_acceptance_user", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "legal_acceptances_user_id_fkey")
   accepted_by users? @relation("legal_acceptance_accepted_by", fields: [accepted_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "legal_acceptances_accepted_by_user_id_fkey")
 
-  @@unique([user_id, document_type, document_version], map: "uq_legal_acceptances_user_doc_version")
+  // The unique keys are PARTIAL indexes living in migration 20261113110000 (Prisma cannot express them):
+  //   uq_legal_acceptances_user_doc_version          WHERE method <> 'majority_release'
+  //   uq_legal_acceptances_release_user_doc_version  WHERE method = 'majority_release'
   @@map("legal_acceptances")
 }
 
@@ -3761,30 +3761,10 @@ model relationship_types {
   created_at            DateTime                          @default(now()) @db.Timestamptz(6)
   modified_at           DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
   emergency_contacts    emergency_contacts[]
-  legal_representatives legal_representatives[]
   guardianships         guardianships[]
   translations          relationship_types_translations[]
 
   @@index([name], map: "idx_relationship_types_name")
-}
-
-model legal_representatives {
-  id                     String              @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
-  user_id                String              @unique @db.Uuid
-  representative_user_id String?             @db.Uuid
-  name                   String?             @db.VarChar(100)
-  paternal_last_name     String?             @db.VarChar(100)
-  maternal_last_name     String?             @db.VarChar(100)
-  phone                  String?             @db.VarChar(20)
-  relationship_type_id   String?             @db.Uuid
-  created_at             DateTime            @default(now()) @db.Timestamptz(6)
-  modified_at            DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
-  relationship_types     relationship_types? @relation(fields: [relationship_type_id], references: [relationship_type_id], onDelete: NoAction, onUpdate: NoAction)
-  representative_user    users?              @relation("representative", fields: [representative_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-  users                  users               @relation("user_legal_rep", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([user_id], map: "idx_legal_reps_user")
-  @@index([representative_user_id], map: "idx_legal_reps_representative")
 }
 
 enum blood_type {
@@ -6670,6 +6650,17 @@ model dependent_profiles {
   purged_at            DateTime? @db.Timestamptz(6)
   // Phase 3c: set once the verified guardians were nudged that the child can have its own login (NULL = never).
   teen_login_nudged_at DateTime? @db.Timestamptz(6)
+  // Phase 4 (release at majority, migration 20261113100000). The partial indexes
+  // idx_dependent_profiles_unreleased / idx_dependent_profiles_release_deadline are SQL-only.
+  majority_notice_sent_at DateTime? @db.Timestamptz(6)
+  released_at             DateTime? @db.Timestamptz(6)
+  release_deadline_at     DateTime? @db.Timestamptz(6)
+  release_source          String?   @db.VarChar(16)
+  release_accepted_at     DateTime? @db.Timestamptz(6)
+  release_completed_at    DateTime? @db.Timestamptz(6)
+  release_reminder_level  Int       @default(0) @db.SmallInt
+  // 'majority_release' for a release freeze (never auto-purged, ruling R6); legacy freezes keep NULL.
+  frozen_reason           String?   @db.VarChar(24)
 
   user       users @relation("dependent_profile_user", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "dependent_profiles_user_id_fkey")
   created_by users @relation("dependent_profile_creator", fields: [created_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "dependent_profiles_created_by_user_id_fkey")

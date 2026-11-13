@@ -31,7 +31,8 @@ export interface RecordEventDto {
     | 'system'
     | 'guardian_acting'
     | 'supervised_user'
-    | 'linked_device';
+    | 'linked_device'
+    | 'released_user';
 }
 
 export interface AuditLogItem {

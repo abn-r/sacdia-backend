@@ -25,6 +25,7 @@ const EXPECTED_TEMPLATES = [
   'PasswordResetEmail',
   'AccountDeletionConfirmedEmail',
   'CronAlertEmail',
+  'MajorityReleaseEmail',
   'InvestitureNoticeEmail',
 ];
 const LOCALES = ['es', 'en', 'fr', 'pt-BR'];
@@ -67,6 +68,7 @@ const { PasswordResetEmail } = t('password-reset');
 const { AccountDeletionConfirmedEmail } = t('account-deletion-confirmed');
 const { CronAlertEmail } = t('cron-alert');
 const { InvestitureNoticeEmail } = t('investiture-notice');
+const { MajorityReleaseEmail } = t('majority-release');
 const h = React.createElement;
 const locales = ${JSON.stringify(LOCALES)};
 const builders = {
@@ -81,6 +83,8 @@ const builders = {
     jobName: 'nightly-job', condition: 'consecutive_failures', conditionDetail: '3 fallos',
     recentFailures: [{ run_id: 1, started_at: '2030-01-01T00:00:00.000Z', error_message: 'boom', duration_ms: 1200 }],
     locale: lang }),
+  MajorityReleaseEmail: (lang) => h(MajorityReleaseEmail, {
+    kind: 'reminder', daysLeft: 7, deadlineAt: new Date('2030-01-01T00:00:00Z'), lang }),
   InvestitureNoticeEmail: () => h(InvestitureNoticeEmail, {
     paragraphs: ['Primer parrafo', 'Segundo parrafo'], link: 'https://example.com/investiture' }),
 };

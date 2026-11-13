@@ -13,7 +13,22 @@ function createService() {
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
     },
   };
-  return { service: new LegalService(prisma as any), prisma };
+  const releaseCompletion = {
+    tryComplete: jest
+      .fn()
+      .mockResolvedValue({ completed: false, thawed: false }),
+  };
+  const cache = { bump: jest.fn().mockResolvedValue(undefined) };
+  return {
+    service: new LegalService(
+      prisma as any,
+      releaseCompletion as any,
+      cache as any,
+    ),
+    prisma,
+    releaseCompletion,
+    cache,
+  };
 }
 
 async function mismatchCode(fn: () => unknown) {
@@ -355,5 +370,171 @@ describe('LegalService', () => {
         tx.legal_acceptances.createMany.mock.calls[0][0].data[0],
       ).toMatchObject({ user_agent: null });
     });
+  });
+});
+
+describe('LegalService.getStatus releaseOnly (Phase 4)', () => {
+  it('only counts method majority_release rows when releaseOnly is set', async () => {
+    const { service, prisma } = createService();
+    await service.getStatus('u1', undefined, { releaseOnly: true });
+    expect(prisma.legal_acceptances.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          user_id: 'u1',
+          method: 'majority_release',
+        }),
+      }),
+    );
+  });
+
+  it('is unchanged for everyone else (no method filter)', async () => {
+    const { service, prisma } = createService();
+    await service.getStatus('u1');
+    const where = prisma.legal_acceptances.findMany.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty('method');
+  });
+
+  it('guardian-on-behalf rows alone leave a released adult requiring acceptance', async () => {
+    const { service, prisma } = createService();
+    // The DB filter excludes the on-behalf rows, so the query returns nothing.
+    prisma.legal_acceptances.findMany.mockResolvedValue([]);
+    const status = await service.getStatus('u1', undefined, {
+      releaseOnly: true,
+    });
+    expect(status.requires_acceptance).toBe(true);
+  });
+});
+
+describe('LegalService.acceptMajorityRelease (Phase 4)', () => {
+  const ctx = { ipAddress: '203.0.113.9', userAgent: 'SACDIA/1.0' };
+
+  function setup(opts: {
+    claimed: number;
+    profile?: Record<string, unknown> | null;
+    completion?: { completed: boolean; thawed: boolean };
+  }) {
+    const { service, prisma, releaseCompletion, cache } = createService();
+    const tx = {
+      legal_acceptances: {
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+      dependent_profiles: {
+        updateMany: jest.fn().mockResolvedValue({ count: opts.claimed }),
+        findUnique: jest.fn().mockResolvedValue(opts.profile ?? null),
+      },
+    };
+    (prisma as any).$transaction = jest.fn((fn: any) => fn(tx));
+    releaseCompletion.tryComplete.mockResolvedValue(
+      opts.completion ?? { completed: false, thawed: false },
+    );
+    return { service, prisma, tx, releaseCompletion, cache };
+  }
+
+  it('writes method majority_release rows with accepted_by NULL, marks release_accepted_at, tries to complete and bumps after commit', async () => {
+    const { service, tx, releaseCompletion, cache } = setup({ claimed: 1 });
+    await service.acceptMajorityRelease('u1', OK, ctx);
+
+    expect(tx.legal_acceptances.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          user_id: 'u1',
+          document_type: 'terms',
+          document_version: CURRENT,
+          method: 'majority_release',
+          accepted_by_user_id: null,
+          ip_address: '203.0.113.9',
+        }),
+        expect.objectContaining({
+          document_type: 'privacy',
+          method: 'majority_release',
+        }),
+      ],
+      skipDuplicates: true,
+    });
+    expect(tx.dependent_profiles.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          user_id: 'u1',
+          purged_at: null,
+          release_accepted_at: null,
+        }),
+        data: { release_accepted_at: expect.any(Date) },
+      }),
+    );
+    expect(releaseCompletion.tryComplete).toHaveBeenCalledWith(
+      tx,
+      'u1',
+      expect.any(Date),
+    );
+    expect(cache.bump).toHaveBeenCalledWith('u1');
+  });
+
+  it('a stale version is a 400 LEGAL_VERSION_MISMATCH and touches nothing', async () => {
+    const { service, prisma } = setup({ claimed: 1 });
+    expect(
+      await mismatchCode(() =>
+        service.acceptMajorityRelease('u1', { terms: '1.0', privacy: CURRENT }),
+      ),
+    ).toBe(ErrorCode.LEGAL_VERSION_MISMATCH);
+    expect((prisma as any).$transaction).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent: a second accept (already accepted, live profile) is a 200 with no error', async () => {
+    const { service } = setup({
+      claimed: 0,
+      profile: {
+        purged_at: null,
+        release_accepted_at: new Date(),
+        frozen_at: null,
+        frozen_reason: null,
+      },
+    });
+    await expect(
+      service.acceptMajorityRelease('u1', OK, ctx),
+    ).resolves.toBeDefined();
+  });
+
+  it.each([
+    ['no profile row', null],
+    [
+      'purged',
+      {
+        purged_at: new Date(),
+        release_accepted_at: null,
+        frozen_at: null,
+        frozen_reason: null,
+      },
+    ],
+    [
+      'legacy freeze (not a release)',
+      {
+        purged_at: null,
+        release_accepted_at: new Date(),
+        frozen_at: new Date(),
+        frozen_reason: null,
+      },
+    ],
+  ])('409 FAMILY_RELEASE_NOT_PENDING: %s', async (_label, profile) => {
+    const { service, cache } = setup({ claimed: 0, profile });
+    await expect(
+      service.acceptMajorityRelease('u1', OK, ctx),
+    ).rejects.toMatchObject({
+      code: ErrorCode.FAMILY_RELEASE_NOT_PENDING,
+      status: 409,
+    });
+    expect(cache.bump).not.toHaveBeenCalled();
+  });
+
+  it('accepting while majority-frozen is allowed (R1 thaw): the claim includes frozen_reason majority_release rows', async () => {
+    const { service, tx } = setup({
+      claimed: 1,
+      completion: { completed: true, thawed: true },
+    });
+    await service.acceptMajorityRelease('u1', OK, ctx);
+    const where = tx.dependent_profiles.updateMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual([
+      { frozen_at: null },
+      { frozen_reason: 'majority_release' },
+    ]);
   });
 });

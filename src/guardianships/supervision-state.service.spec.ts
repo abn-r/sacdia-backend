@@ -12,7 +12,14 @@ describe('SupervisionStateService.describe', () => {
       },
       guardianships: { findMany: jest.fn().mockResolvedValue(rows) },
     };
-    return { service: new SupervisionStateService(prisma as never), prisma };
+    return {
+      service: new SupervisionStateService(
+        prisma as never,
+        { isEnabled: () => false } as never,
+        {} as never,
+      ),
+      prisma,
+    };
   }
 
   it('exposes the guardianship id and consent status so the teen can revoke a pending link', async () => {
@@ -77,5 +84,60 @@ describe('SupervisionStateService.describe', () => {
 
     expect(view.days_left).toBe(80);
     expect(view.pending_since).toBe('2026-10-10T12:00:00.000Z');
+  });
+
+  describe('majority notice (Phase 4)', () => {
+    function buildWithRelease(user: unknown, flagOn = true) {
+      const prisma = {
+        supervised_logins: {
+          findUnique: jest.fn().mockResolvedValue({ pending_since: null }),
+        },
+        guardianships: { findMany: jest.fn().mockResolvedValue([]) },
+        users: { findUnique: jest.fn().mockResolvedValue(user) },
+      };
+      const policy = {
+        getPolicy: jest.fn().mockResolvedValue({
+          ageOfMajority: 18,
+          minSelfLoginAge: 13,
+          timeZone: 'UTC',
+        }),
+      };
+      const service = new SupervisionStateService(
+        prisma as never,
+        { isEnabled: () => flagOn } as never,
+        policy as never,
+      );
+      return { service, prisma };
+    }
+
+    it('flag off: no extra query, null date, notice not sent', async () => {
+      const { service, prisma } = buildWithRelease(null, false);
+      const view = await service.describe('t', 'active', now);
+      expect(view.majority_date).toBeNull();
+      expect(view.release_notice_sent).toBe(false);
+      expect(prisma.users.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('inside the 30-day window: majority date and notice flag', async () => {
+      const { service } = buildWithRelease({
+        birthday: new Date('2008-11-10T00:00:00.000Z'),
+        country_id: null,
+        dependent_profile: { majority_notice_sent_at: new Date() },
+      });
+      const view = await service.describe('t', 'active', now);
+      expect(view.majority_date).toBe('2026-11-10');
+      expect(view.release_notice_sent).toBe(true);
+    });
+
+    it('outside the window the date stays null', async () => {
+      const { service } = buildWithRelease({
+        birthday: new Date('2009-11-10T00:00:00.000Z'),
+        country_id: null,
+        dependent_profile: null,
+      });
+      const view = await service.describe('t', 'active', now);
+      expect(view.majority_date).toBeNull();
+      expect(view.release_notice_sent).toBe(false);
+    });
   });
 });

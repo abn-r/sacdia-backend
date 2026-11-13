@@ -1090,11 +1090,6 @@ export class UsersService {
     return context?.age ?? null;
   }
 
-  async requiresLegalRepresentative(userId: string): Promise<boolean> {
-    const context = await this.resolveAgeContext(userId);
-    return context !== null && context.age < context.ageOfMajority;
-  }
-
   private async rollbackUploadedObjects(
     bucketAlias: StorageBucketAlias,
     keys: string[],

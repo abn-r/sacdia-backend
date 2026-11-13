@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
 
+// Scope note (FP4-53): this deny-list guards ONLY the Phase 2 migration file. The
+// single explicit exemption is migration 20261114100000_family_drop_legal_representatives
+// (Phase 4c-2), covered by family-drop-legal-representatives.migration.spec.ts.
 const migration = readFileSync(
   join(
     __dirname,

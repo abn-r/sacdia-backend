@@ -8,6 +8,8 @@ import {
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_CRON_ALERT,
   EMAIL_JOB_INVESTITURE_NOTICE,
+  EMAIL_JOB_MAJORITY_RELEASE,
+  type MajorityReleaseEmailKind,
 } from './email.queue';
 import type {
   CronAlertCondition,
@@ -48,6 +50,15 @@ export interface SendCronAlertParams {
   conditionDetail: string;
   recentFailures: CronAlertFailedRun[];
   locale?: string;
+}
+
+export interface SendMajorityReleaseParams {
+  to: string;
+  kind: MajorityReleaseEmailKind;
+  daysLeft?: number;
+  deadlineAt?: Date;
+  /** Notice only: ISO date (YYYY-MM-DD) of the majority. */
+  majorityDate?: string;
 }
 
 /**
@@ -135,6 +146,25 @@ export class EmailService {
       conditionDetail,
       recentFailures,
       locale,
+    });
+  }
+
+  /**
+   * Phase 4: notice / released / reminder / frozen mail to a person at
+   * majority. No credentials and no links: the text points to the app. The
+   * address is masked in logs.
+   */
+  async sendMajorityRelease(params: SendMajorityReleaseParams): Promise<void> {
+    const { to, kind, daysLeft, deadlineAt, majorityDate } = params;
+    this.logger.log(
+      `Enqueuing majority release email: kind=${kind} to=${maskEmail(to)}`,
+    );
+    await this.queue.enqueue(EMAIL_JOB_MAJORITY_RELEASE, {
+      to,
+      kind,
+      daysLeft,
+      deadlineAt: deadlineAt?.toISOString(),
+      majorityDate,
     });
   }
 

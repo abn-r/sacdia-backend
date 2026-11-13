@@ -212,6 +212,14 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'DELETE /auth/sessions/:sessionId': 'account:manage',
   'DELETE /auth/me': 'account:manage',
   'GET /auth/oauth/providers': 'account:manage',
+
+  // ======== Phase 4: released adult (released_user ONLY) ========
+  // Any-of routes list their PRIMARY (first) scope here; the full any-of lists
+  // are asserted in release-gate.allowlist.spec.ts.
+  'POST /users/me/data-export': 'data:export',
+  'GET /users/me/data-exports': 'data:export',
+  'GET /users/me/data-exports/:exportId/download': 'data:export',
+  'POST /users/me/release/email': 'release:email',
 };
 
 /**
@@ -247,6 +255,10 @@ const TEEN_ACCESS: Record<
   'account:manage': 'none',
   'credential:read': 'active',
   'club:context': 'active',
+  // Phase 4: released adults only.
+  'release:read': 'none',
+  'release:email': 'none',
+  'data:export': 'none',
 };
 
 /**
@@ -372,6 +384,9 @@ const DEVICE_ACCESS: Record<ActingForScope, boolean> = {
   'account:manage': false,
   'credential:read': true,
   'club:context': false,
+  'release:read': false,
+  'release:email': false,
+  'data:export': false,
 };
 
 /**
@@ -462,7 +477,8 @@ const NEVER_SCOPE: Array<{
     label: 'oauth',
     pattern: /^(?!GET \/auth\/oauth\/providers$)[A-Z]+ \/auth\/oauth(\/|$)/,
   },
-  { label: 'data export', pattern: /^[A-Z]+ \/users\/me\/data-export/ },
+  // data export carries `data:export` since Phase 4 (released_user ONLY, see
+  // release-gate.allowlist.spec.ts and the RELEASED_USER_ONLY checks below).
   {
     // Adult-only self-service of the counselor credential: no scope for any
     // restricted principal (guardian, teen, device, unknown age).
@@ -490,17 +506,9 @@ const NEVER_SCOPE: Array<{
     pattern: /^POST \/club-sections\/:clubSectionId\/dependents$/,
   },
   {
-    label: 'legal representative',
-    pattern: /^[A-Z]+ \/users\/:userId\/legal-representative/,
-  },
-  {
     label: 'guardian-only post-registration exit',
     pattern:
       /^POST \/users\/:userId\/post-registration\/step-3\/guardian-only$/,
-  },
-  {
-    label: 'requires-legal-representative',
-    pattern: /^GET \/users\/:userId\/requires-legal-representative$/,
   },
   {
     label: 'master honors',

@@ -25,7 +25,6 @@ async function generateSwagger() {
     .addTag('auth', 'Autenticación y registro')
     .addTag('users', 'Gestión de usuarios')
     .addTag('emergency-contacts', 'Contactos de emergencia')
-    .addTag('legal-representatives', 'Representantes legales')
     .addTag('post-registration', 'Post-registro y onboarding')
     .addTag('catalogs', 'Catálogos de referencia')
     .addTag('clubs', 'Gestión de clubes')

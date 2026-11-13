@@ -4,7 +4,7 @@ import {
   actingForScopeDenied,
   principalScopeDenied,
 } from './acting-for.errors';
-import { ACTING_SCOPE_KEY } from './acting-scope.decorator';
+import { ACTING_SCOPE_KEY, actingScopesOf } from './acting-scope.decorator';
 import type { ActingForScope, AuthPrincipal } from './auth-principal';
 
 type PrincipalScopes = Partial<
@@ -15,11 +15,10 @@ type PrincipalScopes = Partial<
 export function readActingScope(
   reflector: Reflector,
   context: ExecutionContext,
-): ActingForScope | undefined {
-  return reflector.getAllAndOverride<ActingForScope | undefined>(
-    ACTING_SCOPE_KEY,
-    [context.getHandler(), context.getClass()],
-  );
+): ActingForScope | readonly ActingForScope[] | undefined {
+  return reflector.getAllAndOverride<
+    ActingForScope | readonly ActingForScope[] | undefined
+  >(ACTING_SCOPE_KEY, [context.getHandler(), context.getClass()]);
 }
 
 /** A plain user (or an anonymous request) is never restricted by scopes. */
@@ -41,7 +40,10 @@ export function isActingScopeAllowed(
     return true;
   }
   const required = readActingScope(reflector, context);
-  return required !== undefined && !!principal?.scopes?.includes(required);
+  // Any-of: one matching scope is enough.
+  return actingScopesOf(required).some((scope) =>
+    principal?.scopes?.includes(scope),
+  );
 }
 
 /**
@@ -49,7 +51,7 @@ export function isActingScopeAllowed(
  * or a scope the principal does not hold:
  *  - guardian_acting  -> ACTING_FOR_SCOPE_DENIED {required_scope} (the app's
  *    acting interceptor depends on this code);
- *  - supervised_user / linked_device / age_unknown_user -> PRINCIPAL_SCOPE_DENIED
+ *  - supervised_user / linked_device / age_unknown_user / released_user -> PRINCIPAL_SCOPE_DENIED
  *    {required_scope, kind, supervision?}, which never triggers the acting exit.
  */
 export function assertActingScope(
@@ -60,11 +62,14 @@ export function assertActingScope(
   if (isActingScopeAllowed(reflector, context, principal)) {
     return;
   }
-  const required = readActingScope(reflector, context) ?? null;
+  const declared = readActingScope(reflector, context);
+  // The denial body reports the primary (first) scope of an any-of list.
+  const required = actingScopesOf(declared)[0] ?? null;
   if (
     principal?.kind === 'supervised_user' ||
     principal?.kind === 'linked_device' ||
-    principal?.kind === 'age_unknown_user'
+    principal?.kind === 'age_unknown_user' ||
+    principal?.kind === 'released_user'
   ) {
     throw principalScopeDenied(required, principal.kind, principal.supervision);
   }

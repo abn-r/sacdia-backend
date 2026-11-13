@@ -18,13 +18,17 @@
  *    post-registration is still open (a Google/Apple sign-up before step 2).
  *    Resolved server-side like `supervised_user`; it only gets
  *    AGE_UNKNOWN_SCOPES until step 2 saves the birthday.
+ *  - `released_user` (Phase 4): an adult released from guardianship at majority
+ *    who has not yet accepted the fresh terms (pending) or was frozen for not
+ *    doing so (frozen). Resolved server-side. Frozen NEVER blocks login (R6).
  */
 export type PrincipalKind =
   | 'user'
   | 'guardian_acting'
   | 'supervised_user'
   | 'linked_device'
-  | 'age_unknown_user';
+  | 'age_unknown_user'
+  | 'released_user';
 
 /** Capability vocabulary. A route is reachable by a non-`user` kind only if it declares one of these. */
 export const ACTING_FOR_SCOPES = [
@@ -55,6 +59,11 @@ export const ACTING_FOR_SCOPES = [
   // Switch the active club assignment. Club data too: same holders as above,
   // minus the device.
   'club:context',
+  // Phase 4: a released adult reads the release state, adds an email and
+  // exports their data. Held by `released_user` ONLY.
+  'release:read',
+  'release:email',
+  'data:export',
 ] as const;
 
 export type ActingForScope = (typeof ACTING_FOR_SCOPES)[number];
@@ -167,6 +176,33 @@ export const AGE_UNKNOWN_SCOPES = [
   'account:manage',
 ] as const satisfies readonly ActingForScope[];
 
+/**
+ * Released adult (Phase 4) that still has to accept the fresh terms / add an
+ * email: read the release state, accept (legal), add an email (+ send the
+ * verification mail), export data and manage the own account (delete, sessions).
+ * No club data, nothing else.
+ */
+export const RELEASED_PENDING_SCOPES = [
+  'release:read',
+  'legal:accept',
+  'release:email',
+  'data:export',
+  'account:manage',
+] as const satisfies readonly ActingForScope[];
+
+/**
+ * Released adult that was frozen (ruling R1 THAW + R6): the SAME set as pending.
+ * A frozen person must be able to accept the terms and add an email to be
+ * unfrozen, besides exporting data and deleting the account. Frozen never
+ * blocks login and is never auto-purged.
+ */
+export const RELEASED_FROZEN_SCOPES = [
+  ...RELEASED_PENDING_SCOPES,
+] as const satisfies readonly ActingForScope[];
+
+/** Release phase of a `released_user` principal. */
+export type ReleasePhase = 'pending' | 'frozen';
+
 /** Supervision state of a `supervised_user` principal. */
 export type SupervisionStatus = 'pending_guardian' | 'active';
 
@@ -192,6 +228,8 @@ export interface AuthPrincipal {
   supervision?: SupervisionStatus;
   /** Only for kind 'linked_device' (3b). */
   linked_device_id?: string;
+  /** Only for kind 'released_user' (Phase 4). */
+  release_phase?: ReleasePhase;
 }
 
 /**
@@ -207,6 +245,8 @@ export function principalSeesClubData(
   principal: Pick<AuthPrincipal, 'kind' | 'supervision'>,
 ): boolean {
   if (principal.kind === 'age_unknown_user') return false;
+  // A released adult is not operating in the club until they accept (Phase 4).
+  if (principal.kind === 'released_user') return false;
   // A linked device only authenticates while the child's pairing guardianship is
   // VERIFIED (the per-request device check enforces it), which is the same bar
   // as an `active` teen: the child sees its own club, within DEVICE_SCOPES.

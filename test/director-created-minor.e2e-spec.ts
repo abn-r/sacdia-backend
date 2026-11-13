@@ -137,8 +137,8 @@ const AUTHORIZATIONS: Record<
     globalPermissions: [
       'users:read_detail',
       'users:update_admin',
-      'legal_representative:read',
-      'legal_representative:update',
+      'guardianship:read',
+      'guardianship:update',
     ],
   },
   // An admin who can read but not write.

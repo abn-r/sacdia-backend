@@ -371,36 +371,4 @@ export class UsersController {
       data: { age },
     };
   }
-
-  @Get(':userId/requires-legal-representative')
-  @RequirePermissions('users:read_detail')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
-  @ApiOperation({
-    summary: 'Verificar si el usuario requiere representante legal',
-    deprecated: true,
-    description:
-      'Deprecated: los representantes legales son de solo lectura (reemplazados por guardianships). La mayoría de edad se toma del país del usuario.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Si requiere (edad < mayoría de edad del país) o no',
-  })
-  async requiresLegalRepresentative(
-    @Param('userId', ParseUuidParamPipe) userId: string,
-  ) {
-    const age = await this.usersService.calculateAge(userId);
-    const required =
-      await this.usersService.requiresLegalRepresentative(userId);
-
-    return {
-      status: 'success',
-      data: {
-        required,
-        userAge: age,
-        reason: required
-          ? 'Usuario es menor de edad'
-          : 'Usuario es mayor de edad',
-      },
-    };
-  }
 }

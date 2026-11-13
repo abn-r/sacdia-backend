@@ -15,6 +15,7 @@ import {
   NOTIFICATIONS_QUEUE,
 } from './notifications.processor';
 import { PrismaModule } from '../prisma/prisma.module';
+import { FamilyFeatureFlagsModule } from '../guardianships/family-feature-flags.module';
 import { FirebaseAdminModule } from '../config/firebase-admin.module';
 import { BullModule } from '@nestjs/bullmq';
 import { isBullmqWorkerEnabled } from '../config/bullmq-workers.config';
@@ -42,6 +43,7 @@ function isRedisConfigured(): boolean {
 @Module({
   imports: [
     PrismaModule,
+    FamilyFeatureFlagsModule,
     FirebaseAdminModule,
     ...(isRedisConfigured()
       ? [BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE })]

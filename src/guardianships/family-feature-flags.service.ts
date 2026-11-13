@@ -4,22 +4,24 @@ import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
 export type FamilyFeatureFlag =
-  'teen_login' | 'linked_device' | 'director_create_minor';
+  'teen_login' | 'linked_device' | 'director_create_minor' | 'majority_release';
 
 export interface FamilyFeatures {
   teen_login: boolean;
   linked_device: boolean;
   director_create_minor: boolean;
+  majority_release: boolean;
 }
 
 const FLAG_ENV: Record<FamilyFeatureFlag, string> = {
   teen_login: 'FAMILY_TEEN_LOGIN_ENABLED',
   linked_device: 'FAMILY_LINKED_DEVICE_ENABLED',
   director_create_minor: 'FAMILY_DIRECTOR_CREATE_MINOR_ENABLED',
+  majority_release: 'FAMILY_MAJORITY_RELEASE_ENABLED',
 };
 
 /**
- * Reads the three family-profiles Phase 3 flags. The service itself caches
+ * Reads the family-profiles flags (Phase 3 and the Phase 4 majority release). The service itself caches
  * nothing (every call asks the ConfigService), but a deployed server reads the
  * environment validated at boot: flipping a flag in production needs a RESTART.
  * Only tests can flip one live, through `ConfigService.set`. The defaults are
@@ -39,13 +41,23 @@ export class FamilyFeatureFlagsService {
     return value === true || value === 'true';
   }
 
-  /** The three booleans, as exposed in `/auth/me.family_features`. */
+  /** The booleans, as exposed in `/auth/me.family_features`. */
   getAll(): FamilyFeatures {
     return {
       teen_login: this.isEnabled('teen_login'),
       linked_device: this.isEnabled('linked_device'),
       director_create_minor: this.isEnabled('director_create_minor'),
+      majority_release: this.isEnabled('majority_release'),
     };
+  }
+
+  /**
+   * FAMILY_MAJORITY_RELEASE_DRY_RUN: the release cron computes and logs but
+   * writes and sends nothing. Same restart-to-change semantics as the flags.
+   */
+  isMajorityReleaseDryRun(): boolean {
+    const value: unknown = this.config.get('FAMILY_MAJORITY_RELEASE_DRY_RUN');
+    return value === true || value === 'true';
   }
 
   /** Throws 404 FAMILY_FEATURE_DISABLED when the flag is off. */

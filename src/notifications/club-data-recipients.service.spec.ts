@@ -24,6 +24,7 @@ interface Row {
   supervisedLogin?: { disabled_at: Date | null; method: string } | null;
   postRegistrationComplete?: boolean | null;
   staffRole?: boolean;
+  profile?: Record<string, Date | string | null> | null;
 }
 
 function row(r: Row) {
@@ -32,7 +33,7 @@ function row(r: Row) {
     birthday: r.birthday,
     country_id: r.country_id ?? null,
     supervised_login: r.supervisedLogin ?? null,
-    dependent_profile: null,
+    dependent_profile: r.profile ?? null,
     guardianships_as_dependent: r.verifiedGuardian
       ? [{ guardianship_id: 'g-1' }]
       : [],
@@ -47,15 +48,24 @@ function row(r: Row) {
   };
 }
 
-function setup(rows: ReturnType<typeof row>[]) {
+function setup(rows: ReturnType<typeof row>[], releaseEnabled = false) {
   const prisma: any = {
     users: { findMany: jest.fn().mockResolvedValue(rows) },
   };
   const countryAgePolicy: any = {
     getPolicy: jest.fn().mockResolvedValue({ ...DEFAULT_COUNTRY_AGE_POLICY }),
   };
+  const familyFlags: any = {
+    isEnabled: jest.fn((flag: string) =>
+      flag === 'majority_release' ? releaseEnabled : false,
+    ),
+  };
   return {
-    service: new ClubDataRecipientsService(prisma, countryAgePolicy),
+    service: new ClubDataRecipientsService(
+      prisma,
+      countryAgePolicy,
+      familyFlags,
+    ),
     prisma,
     countryAgePolicy,
   };
@@ -241,5 +251,53 @@ describe('ClubDataRecipientsService.filterClubDataRecipients', () => {
     await expect(service.filterClubDataRecipients([ADULT])).rejects.toThrow(
       'db down',
     );
+  });
+
+  describe('Phase 4 released adults', () => {
+    const profile = (extra: Record<string, Date | string | null> = {}) => ({
+      frozen_at: null,
+      purged_at: null,
+      released_at: null,
+      release_accepted_at: null,
+      release_completed_at: null,
+      frozen_reason: null,
+      ...extra,
+    });
+
+    it('flag on: a released (pending or frozen) adult gets no club push; a completed one does', async () => {
+      const rows = [
+        row({ user_id: ADULT, birthday: yearsAgo(30), profile: profile() }),
+        row({
+          user_id: ACTIVE_TEEN,
+          birthday: yearsAgo(30),
+          profile: profile({
+            frozen_at: new Date(),
+            frozen_reason: 'majority_release',
+          }),
+        }),
+        row({
+          user_id: PENDING_TEEN,
+          birthday: yearsAgo(30),
+          profile: profile({
+            release_accepted_at: new Date(),
+            release_completed_at: new Date(),
+          }),
+        }),
+      ];
+      const { service } = setup(rows, true);
+      await expect(
+        service.filterClubDataRecipients([ADULT, ACTIVE_TEEN, PENDING_TEEN]),
+      ).resolves.toEqual([PENDING_TEEN]);
+    });
+
+    it('flag off: nothing changes (exact old behavior)', async () => {
+      const rows = [
+        row({ user_id: ADULT, birthday: yearsAgo(30), profile: profile() }),
+      ];
+      const { service } = setup(rows, false);
+      await expect(service.filterClubDataRecipients([ADULT])).resolves.toEqual([
+        ADULT,
+      ]);
+    });
   });
 });

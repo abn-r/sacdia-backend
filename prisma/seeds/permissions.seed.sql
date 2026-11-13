@@ -565,8 +565,8 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('health:update', 'Update user health information', true),
   ('emergency_contacts:read', 'Read user emergency contacts', true),
   ('emergency_contacts:update', 'Update user emergency contacts', true),
-  ('legal_representative:read', 'Read user legal representative info', true),
-  ('legal_representative:update', 'Update user legal representative info', true),
+  ('guardianship:read', 'Read user guardianship (family) info', true),
+  ('guardianship:update', 'Update user guardianship (family) access', true),
   ('post_registration:read', 'Read user post-registration data', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,

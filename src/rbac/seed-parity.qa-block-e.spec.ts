@@ -24,10 +24,19 @@ const permissionsOfLaterMigrations: ReadonlySet<string> = new Set(
   readdirSync(join(PRISMA_DIR, 'migrations'))
     .filter((dir) => /^\d{14}_/.test(dir) && dir > SNAPSHOT_MIGRATION)
     .flatMap((dir) => {
-      const sql = stripComments(read(`migrations/${dir}/migration.sql`));
-      return /INSERT INTO permissions/i.test(sql)
-        ? [...sql.matchAll(/\('([a-z_-]+:[a-z_-]+)',\s*'/g)].map((m) => m[1])
-        : [];
+      const raw = read(`migrations/${dir}/migration.sql`);
+      const sql = stripComments(raw);
+      // `-- authz:rename old -> new` (a comment, so read from the raw text):
+      // the new key is created by that later migration.
+      const renamed = [
+        ...raw.matchAll(/^--\s*authz:rename\s+\S+\s*->\s*(\S+)\s*$/gm),
+      ].map((m) => m[1]);
+      return [
+        ...renamed,
+        ...(/INSERT INTO permissions/i.test(sql)
+          ? [...sql.matchAll(/\('([a-z_-]+:[a-z_-]+)',\s*'/g)].map((m) => m[1])
+          : []),
+      ];
     }),
 );
 const mentionsLaterPermission = (sql: string) =>

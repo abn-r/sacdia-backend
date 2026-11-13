@@ -1,7 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { ACTING_SCOPE_KEY } from '../auth/acting-for/acting-scope.decorator';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
-import { DependentClaimCodesController } from './dependent-claim-codes.controller';
+import { AdultClaimIssueService } from './adult-claim-issue.service';
+import {
+  DependentAdultClaimCodesController,
+  DependentClaimCodesController,
+} from './dependent-claim-codes.controller';
 import { GuardianEvidenceService } from './guardian-evidence.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsController } from './guardianships.controller';
@@ -18,6 +22,7 @@ describe('GuardianshipsController', () => {
     listForGuardian: jest.fn().mockResolvedValue({ dependents: [] }),
     createDependent: jest.fn().mockResolvedValue({ user_id: 'd-1' }),
     getDetailForGuardian: jest.fn().mockResolvedValue({ user_id: 'd-1' }),
+    listReleasedHistory: jest.fn().mockResolvedValue({ released: [] }),
     listGuardianRelationshipTypes: jest
       .fn()
       .mockResolvedValue([
@@ -28,6 +33,10 @@ describe('GuardianshipsController', () => {
     issueSecondGuardianCode: jest.fn().mockResolvedValue({ code: 'AAAA-BBBB' }),
     redeem: jest.fn().mockResolvedValue({ user_id: 'd-1' }),
     issueDirectorClaimCode: jest.fn().mockResolvedValue({ code: 'CCCC-DDDD' }),
+  };
+  const adultClaims = {
+    issueForFormerGuardian: jest.fn().mockResolvedValue({ code: 'EEEE-FFFF' }),
+    issueForDirector: jest.fn().mockResolvedValue({ code: 'GGGG-HHHH' }),
   };
   const lifecycle = {
     deletionImpact: jest.fn().mockResolvedValue({ dependents: [] }),
@@ -57,11 +66,16 @@ describe('GuardianshipsController', () => {
 
   let controller: GuardianshipsController;
   let claimController: DependentClaimCodesController;
+  let adultClaimController: DependentAdultClaimCodesController;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const module = await Test.createTestingModule({
-      controllers: [GuardianshipsController, DependentClaimCodesController],
+      controllers: [
+        GuardianshipsController,
+        DependentClaimCodesController,
+        DependentAdultClaimCodesController,
+      ],
       providers: [
         { provide: GuardianshipsService, useValue: guardianships },
         { provide: LinkCodesService, useValue: linkCodes },
@@ -70,6 +84,7 @@ describe('GuardianshipsController', () => {
         { provide: SupervisedLoginsService, useValue: supervisedLogins },
         { provide: DevicePairingService, useValue: devicePairing },
         { provide: LinkedDevicesService, useValue: linkedDevices },
+        { provide: AdultClaimIssueService, useValue: adultClaims },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -79,6 +94,42 @@ describe('GuardianshipsController', () => {
       .compile();
     controller = module.get(GuardianshipsController);
     claimController = module.get(DependentClaimCodesController);
+    adultClaimController = module.get(DependentAdultClaimCodesController);
+  });
+
+  describe('adult claim and released history (phase 4b)', () => {
+    it('GET me/history wraps the minimal history for the token subject', async () => {
+      expect(await controller.history(USER)).toEqual({
+        status: 'success',
+        data: { released: [] },
+      });
+      expect(guardianships.listReleasedHistory).toHaveBeenCalledWith(
+        'guardian-1',
+      );
+    });
+
+    it('a former guardian issues the access code as the token subject', async () => {
+      expect(await controller.issueAdultClaimCode(USER, 'd-1')).toEqual({
+        status: 'success',
+        data: { code: 'EEEE-FFFF' },
+      });
+      expect(adultClaims.issueForFormerGuardian).toHaveBeenCalledWith(
+        'guardian-1',
+        'd-1',
+      );
+    });
+
+    it('a director issues the access code for the section', async () => {
+      expect(await adultClaimController.issue(7, 'd-1', USER)).toEqual({
+        status: 'success',
+        data: { code: 'GGGG-HHHH' },
+      });
+      expect(adultClaims.issueForDirector).toHaveBeenCalledWith(
+        'guardian-1',
+        7,
+        'd-1',
+      );
+    });
   });
 
   it('wraps every response in the success envelope', async () => {

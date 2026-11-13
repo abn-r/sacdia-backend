@@ -2,7 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { ActingForCache } from '../acting-for/acting-for.cache';
-import type { SupervisionStatus } from '../acting-for/auth-principal';
+import type {
+  ReleasePhase,
+  SupervisionStatus,
+} from '../acting-for/auth-principal';
 
 /**
  * Why a principal is cut. `teen_login_disabled` (FAMILY_TEEN_LOGIN_ENABLED is
@@ -29,7 +32,17 @@ export type SupervisedState =
       supervision: SupervisionStatus;
       login_method?: SupervisedLoginMethod;
     }
-  | { state: 'blocked'; cause: SupervisedBlockCause };
+  | { state: 'blocked'; cause: SupervisedBlockCause }
+  /**
+   * Phase 4: an adult released from guardianship that has not completed the
+   * release (accepted the fresh terms + has an email). `frozen` still logs in
+   * (ruling R6) and can thaw by accepting.
+   */
+  | {
+      state: 'released';
+      phase: ReleasePhase;
+      login_method?: SupervisedLoginMethod;
+    };
 
 export const SUPERVISED_ADULT_TTL_MS = 3_600_000; // 1 h
 export const SUPERVISED_ACTIVE_TTL_MS = 60_000; // 60 s
@@ -78,7 +91,13 @@ export function msUntilNextLocalMidnight(
  * Epoch-versioned cache of the supervised-principal decision.
  *
  * Keys:
- *  - `supv:v3:{userId}:{epoch}`            the SupervisedState. v2 added the
+ *  - `supv:v4:{userId}:{epoch}`            the SupervisedState. v4 adds the
+ *                                          `released` state (Phase 4). While
+ *                                          FAMILY_MAJORITY_RELEASE_ENABLED is
+ *                                          on the key is `supv:v4r:...`, so a
+ *                                          flag flip never reads a state
+ *                                          derived under the other value.
+ *                                          v2 added the
  *                                          `profile_incomplete` state (a v1
  *                                          entry said "adult" for a NULL
  *                                          birthday); v3 adds `login_method`
@@ -106,12 +125,21 @@ export class SupervisedPrincipalCache {
     return this.epochs.initEpoch(userId);
   }
 
+  private stateKey(
+    userId: string,
+    epoch: number,
+    releaseEnabled: boolean,
+  ): string {
+    return `${releaseEnabled ? 'supv:v4r' : 'supv:v4'}:${userId}:${epoch}`;
+  }
+
   async getState(
     userId: string,
     epoch: number,
+    releaseEnabled = false,
   ): Promise<SupervisedState | null> {
     const cached = await this.cache.get<SupervisedState>(
-      `supv:v3:${userId}:${epoch}`,
+      this.stateKey(userId, epoch, releaseEnabled),
     );
     return cached ?? null;
   }
@@ -121,17 +149,24 @@ export class SupervisedPrincipalCache {
     epoch: number,
     state: SupervisedState,
     timeZone: string | null,
+    releaseEnabled = false,
   ): Promise<void> {
     const base =
       state.state === 'adult'
         ? SUPERVISED_ADULT_TTL_MS
-        : state.state === 'supervised' || state.state === 'profile_incomplete'
+        : state.state === 'supervised' ||
+            state.state === 'profile_incomplete' ||
+            state.state === 'released'
           ? SUPERVISED_ACTIVE_TTL_MS
           : SUPERVISED_BLOCKED_TTL_MS;
     const ttl = timeZone
       ? Math.max(Math.min(base, msUntilNextLocalMidnight(timeZone)), MIN_TTL_MS)
       : base;
-    await this.cache.set(`supv:v3:${userId}:${epoch}`, state, ttl);
+    await this.cache.set(
+      this.stateKey(userId, epoch, releaseEnabled),
+      state,
+      ttl,
+    );
   }
 
   async getSession(

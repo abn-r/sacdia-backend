@@ -3,6 +3,10 @@
   "email_verification_subject": "Verify your email — SACDIA",
   "password_reset_subject": "Reset your password — SACDIA",
   "account_deletion_subject": "Your SACDIA account has been deleted",
+  "majority_release_subject_notice": "You will soon be of age — SACDIA",
+  "majority_release_subject_released": "Your SACDIA account is now yours alone",
+  "majority_release_subject_reminder": "Accept the terms to keep your SACDIA account",
+  "majority_release_subject_frozen": "Your SACDIA account is paused",
   "email_verification": {
     "preview": "Verify your email address to activate your SACDIA account.",
     "title": "Verify your email address",

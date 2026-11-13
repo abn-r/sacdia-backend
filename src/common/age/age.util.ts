@@ -114,3 +114,47 @@ export function parseCalendarDate(value: string): Date | null {
     date.getUTCDate() === day;
   return valid ? date : null;
 }
+
+/**
+ * The calendar date (UTC-midnight Date) on which a person born on `birthday`
+ * first reaches `age` per {@link ageAt}. A Feb-29 birthday in a non-leap target
+ * year overflows to Mar-1 (`Date.UTC` rolls Feb-30 forward), which is exactly
+ * the first day `ageAt` answers `>= age`. Returns null on an unreadable birthday.
+ */
+export function majorityDateOf(
+  birthday: Date | string,
+  age: number,
+): Date | null {
+  const born = toDateValue(birthday);
+  if (!born) {
+    return null;
+  }
+  return new Date(
+    Date.UTC(
+      born.getUTCFullYear() + age,
+      born.getUTCMonth(),
+      born.getUTCDate(),
+    ),
+  );
+}
+
+/**
+ * True when today's calendar date in `timeZone` is within `noticeDays` of the
+ * majority date (inclusive of the day `majority - noticeDays`) AND the person
+ * is not of age yet. The window follows the person's calendar, not UTC.
+ */
+export function isInMajorityNoticeWindow(
+  birthday: Date | string,
+  ageOfMajority: number,
+  timeZone: string,
+  noticeDays: number,
+  now: Date = new Date(),
+): boolean {
+  const majority = majorityDateOf(birthday, ageOfMajority);
+  if (!majority) {
+    return false;
+  }
+  const today = calendarDateIn(timeZone, now);
+  const noticeStart = majority.getTime() - noticeDays * 24 * 60 * 60 * 1000;
+  return today.getTime() >= noticeStart && today.getTime() < majority.getTime();
+}

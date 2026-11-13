@@ -16,6 +16,7 @@ import {
 } from '../membership-requests/membership-request-cancellation';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  MAJORITY_RELEASE_FROZEN_REASON,
   PURGED_DEVICE_LABEL,
   PURGED_GUARDIAN_NAME,
 } from './guardianships.constants';
@@ -38,6 +39,12 @@ export interface PurgeSummary {
 /**
  * Daily purge of FROZEN dependents whose 90 days elapsed (ruling A9: the
  * profile is anonymized AND its personal data is hard-deleted).
+ *
+ * Phase 4 (ruling R6): a released adult frozen by the majority release
+ * (`frozen_reason = 'majority_release'`) is NEVER purged here, permanently and
+ * independent of the FAMILY_MAJORITY_RELEASE_ENABLED flag. Only the person can
+ * ask for deletion (DELETE /auth/me). Legacy freezes (`frozen_reason` NULL) keep
+ * the 90-day purge.
  *
  * Per dependent:
  *   1. The R2 object keys are collected (consent evidence files, the profile
@@ -133,6 +140,13 @@ export class DependentProfilesPurgeCronService {
           frozen_at: { not: null },
           purged_at: null,
           purge_after: { lte: now },
+          // Ruling R6: a released adult frozen by the majority release is NEVER
+          // auto-purged, whatever the flag says or a stray purge_after holds.
+          // Explicit OR: a bare `not` would also drop the NULL (legacy) rows.
+          OR: [
+            { frozen_reason: null },
+            { frozen_reason: { not: MAJORITY_RELEASE_FROZEN_REASON } },
+          ],
           ...(failedIds.length > 0 ? { user_id: { notIn: failedIds } } : {}),
         },
         orderBy: { purge_after: 'asc' },

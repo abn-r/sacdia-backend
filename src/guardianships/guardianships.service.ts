@@ -21,6 +21,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { LegalService } from '../legal/legal.service';
+import { FamilyFeatureFlagsService } from './family-feature-flags.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { SessionRequestContext } from '../better-auth/better-auth.service';
 import type { CreateDependentDto } from './dto';
@@ -33,6 +34,7 @@ import {
 } from './guardianship-queries';
 import {
   GUARDIAN_RELATIONSHIP_TYPE_NAMES,
+  MAJORITY_RELEASE_FROZEN_REASON,
   MAX_DEPENDENTS_PER_GUARDIAN,
   MAX_LINKED_DEVICES_PER_DEPENDENT,
 } from './guardianships.constants';
@@ -40,6 +42,7 @@ import type {
   DependentDetail,
   DependentGuardianEntry,
   DependentSummary,
+  ReleasedHistory,
 } from './guardianships.types';
 import { GlobalRole } from '../common/authorization/roles';
 
@@ -114,6 +117,7 @@ export class GuardianshipsService {
     private readonly countryAgePolicy: CountryAgePolicyService,
     private readonly legalService: LegalService,
     private readonly actingForCache: ActingForCache,
+    private readonly familyFlags: FamilyFeatureFlagsService,
   ) {}
 
   /**
@@ -301,6 +305,78 @@ export class GuardianshipsService {
   // Reads
   // ---------------------------------------------------------------------------
 
+  /**
+   * People this guardian used to manage and who were released at majority
+   * (Phase 4): rows revoked with reason `released`, newest first, at most 50.
+   * Minimal by design: name, relationship, release date and whether an access
+   * code can still be issued. No health, club, progress or contact data. The
+   * name is hidden once the person was purged.
+   */
+  async listReleasedHistory(guardianId: string): Promise<ReleasedHistory> {
+    const rows = await this.prisma.guardianships.findMany({
+      where: {
+        guardian_user_id: guardianId,
+        consent_status: 'revoked',
+        revoked_reason: 'released',
+      },
+      orderBy: { revoked_at: 'desc' },
+      take: 50,
+      select: {
+        guardianship_id: true,
+        dependent_user_id: true,
+        revoked_at: true,
+        relationship_type: { select: { name: true } },
+        dependent: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            account: { select: { id: true }, take: 1 },
+            supervised_login: { select: { user_id: true } },
+            dependent_profile: {
+              select: {
+                released_at: true,
+                release_completed_at: true,
+                frozen_at: true,
+                frozen_reason: true,
+                purged_at: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return {
+      released: rows.map((row) => {
+        const profile = row.dependent.dependent_profile;
+        const purged = profile?.purged_at != null;
+        const legacyFreeze =
+          profile?.frozen_at != null &&
+          profile.frozen_reason !== MAJORITY_RELEASE_FROZEN_REASON;
+        const canIssue =
+          !purged &&
+          !legacyFreeze &&
+          profile != null &&
+          profile.release_completed_at == null &&
+          row.dependent.account.length === 0 &&
+          row.dependent.supervised_login === null;
+        const name = displayName(row.dependent);
+        return {
+          guardianship_id: row.guardianship_id,
+          dependent_user_id: row.dependent_user_id,
+          display_name: purged || name === '' ? null : name,
+          relationship_type_name: row.relationship_type?.name ?? null,
+          released_at: (
+            profile?.released_at ??
+            row.revoked_at ??
+            new Date(0)
+          ).toISOString(),
+          can_issue_claim: canIssue,
+        };
+      }),
+    };
+  }
+
   async listForGuardian(guardianId: string): Promise<{
     dependents: DependentSummary[];
     limits: { max_dependents: number; max_devices: number };
@@ -316,8 +392,12 @@ export class GuardianshipsService {
       orderBy: { created_at: 'asc' },
       select: SUMMARY_SELECT,
     });
+    // Phase 4 lazy window (flag on): between the country's local midnight and the
+    // release cron a person of age is already independent, so the guardian list
+    // drops them (the guardianship row is revoked a few hours later).
+    const dropOfAge = this.familyFlags.isEnabled('majority_release');
     return {
-      dependents: await this.buildSummaries(rows),
+      dependents: await this.buildSummaries(rows, { dropOfAge }),
       limits: {
         max_dependents: MAX_DEPENDENTS_PER_GUARDIAN,
         max_devices: MAX_LINKED_DEVICES_PER_DEPENDENT,
@@ -399,6 +479,7 @@ export class GuardianshipsService {
 
   private async buildSummaries(
     rows: SummaryRow[],
+    options: { dropOfAge?: boolean } = {},
   ): Promise<DependentSummary[]> {
     if (rows.length === 0) return [];
 
@@ -432,7 +513,20 @@ export class GuardianshipsService {
       deviceCounts.set(group.dependent_user_id, group._count._all);
     }
 
-    return rows.map((row) => {
+    const visibleRows = options.dropOfAge
+      ? rows.filter((row) => {
+          const policy = policies.get(
+            row.dependent.country_id,
+          ) as CountryAgePolicy;
+          return (
+            !row.dependent.birthday ||
+            ageToday(row.dependent.birthday, policy.timeZone) <
+              policy.ageOfMajority
+          );
+        })
+      : rows;
+
+    return visibleRows.map((row) => {
       const { dependent } = row;
       const policy = policies.get(dependent.country_id) as CountryAgePolicy;
       const age = dependent.birthday

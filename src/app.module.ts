@@ -17,7 +17,6 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts.module';
-import { LegalRepresentativesModule } from './legal-representatives/legal-representatives.module';
 import { PostRegistrationModule } from './post-registration/post-registration.module';
 import { CatalogsModule } from './catalogs/catalogs.module';
 import { ClubsModule } from './clubs/clubs.module';
@@ -63,6 +62,7 @@ import { AchievementsModule } from './achievements/achievements.module';
 import { DataExportModule } from './data-export/data-export.module';
 import { LegalModule } from './legal/legal.module';
 import { GuardianshipsModule } from './guardianships/guardianships.module';
+import { FamilyReleaseModule } from './guardianships/family-release.module';
 import { GuardianSummaryModule } from './guardianships/guardian-summary.module';
 import { EmailModule } from './common/email/email.module';
 import { QrModule } from './qr/qr.module';
@@ -226,7 +226,6 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     AuthModule,
     UsersModule,
     EmergencyContactsModule,
-    LegalRepresentativesModule,
     PostRegistrationModule,
     CatalogsModule,
     ClubsModule,
@@ -271,6 +270,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     DataExportModule,
     LegalModule,
     GuardianshipsModule,
+    FamilyReleaseModule,
     GuardianSummaryModule,
     EmailModule,
     QrModule,

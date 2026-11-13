@@ -5,3 +5,5 @@ export * from './revoke-guardianship.dto';
 export * from './supervised-login.dto';
 export * from './pair-device.dto';
 export * from './create-director-dependent.dto';
+export * from './release-email.dto';
+export * from './redeem-adult-claim.dto';

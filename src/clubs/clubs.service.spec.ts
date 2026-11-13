@@ -44,6 +44,7 @@ describe('ClubsService', () => {
   let service: ClubsService;
 
   const mockPrismaService = {
+    dependent_profiles: { findMany: jest.fn().mockResolvedValue([]) },
     clubs: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -1295,6 +1296,66 @@ describe('ClubsService', () => {
         club_role_assignments: {
           some: expect.objectContaining({ users: visibleUsers }),
         },
+      });
+    });
+
+    it('majority release (Phase 4): a pending released adult carries a read-only badge, others none', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_type_id: 2,
+      });
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
+      });
+      const deadline = new Date('2026-12-01T00:00:00.000Z');
+      const member = (userId: string) => ({
+        assignment_id: `a-${userId}`,
+        user_id: userId,
+        club_section_id: 7,
+        active: true,
+        start_date: new Date('2026-01-01'),
+        users: {
+          user_id: userId,
+          name: 'N',
+          paternal_last_name: 'P',
+          maternal_last_name: null,
+          user_image: null,
+        },
+        roles: { role_id: 'r', role_name: 'member', role_category: 'CLUB' },
+      });
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        member('pending'),
+        member('done'),
+        member('adult'),
+      ]);
+      mockPrismaService.dependent_profiles.findMany.mockResolvedValue([
+        { user_id: 'pending', release_deadline_at: deadline },
+      ]);
+      mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+      mockRoleEligibility.evaluateUsersMatching.mockResolvedValue(new Map());
+
+      const result = await service.getMembers(7);
+
+      const byUser = (id: string) => result.find((m) => m.user_id === id)!;
+      expect(byUser('pending')).toMatchObject({
+        release_status: 'pending',
+        release_deadline_at: deadline,
+      });
+      expect(byUser('done')).toMatchObject({
+        release_status: null,
+        release_deadline_at: null,
+      });
+      expect(byUser('adult').release_status).toBeNull();
+      // Only still-pending, unfrozen, unpurged releases are read.
+      expect(
+        mockPrismaService.dependent_profiles.findMany.mock.calls[0][0].where,
+      ).toMatchObject({
+        released_at: { not: null },
+        release_completed_at: null,
+        frozen_at: null,
+        purged_at: null,
       });
     });
 

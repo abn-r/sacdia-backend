@@ -691,6 +691,27 @@ export class ClubsService {
       this.loadGuideMajorForUsers(sectionMemberUsersWhere),
     ]);
 
+    // Majority release (Phase 4): read-only badge for people released at
+    // majority who still have to accept the fresh terms. A separate read of
+    // dependent_profiles (dates only, no PII): the member query itself is not
+    // touched. Frozen people are already out of the list (VISIBLE_DEPENDENT).
+    const releaseRows =
+      members.length === 0
+        ? []
+        : await this.prisma.dependent_profiles.findMany({
+            where: {
+              user_id: { in: members.map((member) => member.user_id) },
+              released_at: { not: null },
+              release_completed_at: null,
+              frozen_at: null,
+              purged_at: null,
+            },
+            select: { user_id: true, release_deadline_at: true },
+          });
+    const releaseByUserId = new Map(
+      releaseRows.map((row) => [row.user_id, row]),
+    );
+
     // Newest enrollment per user (rows arrive newest first).
     const currentEnrollmentByUserId = new Map<
       string,
@@ -731,6 +752,11 @@ export class ClubsService {
           ? (guideMajorClassByUserId.get(member.user_id) ?? null)
           : null;
         const userFields = { ...(user ?? {}) };
+        const releaseProfile = releaseByUserId.get(member.user_id);
+        // A released adult who still has to accept the fresh terms stays in the
+        // list as an ordinary adult; the director only sees that it is pending.
+        // Frozen people are filtered out above and never reach this point.
+        const releasePending = releaseProfile !== undefined;
         const resolvedUserImage =
           typeof userFields.user_image === 'string'
             ? await this.resolvePrivateProfileUrl(userFields.user_image)
@@ -738,6 +764,9 @@ export class ClubsService {
 
         return {
           ...member,
+          // Read-only badge for the roles that already see the member list.
+          release_status: releasePending ? ('pending' as const) : null,
+          release_deadline_at: releaseProfile?.release_deadline_at ?? null,
           is_enrolled: member.active,
           guide_major_eligible: guideMajorEligible,
           guide_major_basis: guideMajorBasis,
