@@ -4,19 +4,11 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import {
-  investiture_status_enum,
-  investiture_action_enum,
-} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { pendingInvestitureAuthorization } from '../investiture-requests/investiture-request-lock';
+import { durationStartDate } from '../classes/enrollment-duration';
+import { EXPIRABLE_STATUSES, expireEnrollmentsInTx } from './enrollment-expiry';
 import { ClubRole, GlobalRole } from '../common/authorization/roles';
-
-const EXPIRABLE_STATUSES: investiture_status_enum[] = [
-  investiture_status_enum.IN_PROGRESS,
-  investiture_status_enum.REJECTED,
-];
 
 @Injectable()
 export class InvestitureService {
@@ -173,6 +165,7 @@ export class InvestitureService {
         enrollment_id: true,
         investiture_status: true,
         ecclesiastical_year: { select: { start_date: true } },
+        duration_start_year: { select: { start_date: true } },
         classes: { select: { max_duration_years: true } },
       },
     });
@@ -180,7 +173,7 @@ export class InvestitureService {
     const overdueIds: number[] = [];
     for (const candidate of candidates) {
       const elapsedYears = await this.countElapsedEcclesiasticalYears(
-        candidate.ecclesiastical_year.start_date,
+        durationStartDate(candidate),
         targetYear.start_date,
       );
 
@@ -193,81 +186,13 @@ export class InvestitureService {
     let expiredEnrollmentIds = overdueIds;
 
     if (!dryRun && overdueIds.length > 0) {
-      const now = new Date();
-      const expiredIds = await this.prisma.$transaction(async (tx) => {
-        const stillExpirable = await tx.enrollments.findMany({
-          where: {
-            enrollment_id: { in: overdueIds },
-            active: true,
-            record_kind: 'OPERATIONAL',
-            investiture_status: { in: EXPIRABLE_STATUSES },
-          },
-          select: { enrollment_id: true },
-        });
-        const revalidatedIds: number[] = [];
-        for (const enrollment of [...stillExpirable].sort(
-          (left, right) => left.enrollment_id - right.enrollment_id,
-        )) {
-          if (
-            await pendingInvestitureAuthorization(tx, enrollment.enrollment_id)
-          ) {
-            continue;
-          }
-          revalidatedIds.push(enrollment.enrollment_id);
-        }
-
-        if (revalidatedIds.length === 0) {
-          return [];
-        }
-
-        const updateResult = await tx.enrollments.updateMany({
-          where: {
-            enrollment_id: { in: revalidatedIds },
-            active: true,
-            record_kind: 'OPERATIONAL',
-            investiture_status: { in: EXPIRABLE_STATUSES },
-          },
-          data: {
-            investiture_status: investiture_status_enum.EXPIRED,
-            validated_by: actorId,
-            validated_at: now,
-            locked_for_validation: false,
-            submitted_for_validation: false,
-            rejection_reason: null,
-          },
-        });
-
-        let auditIds = revalidatedIds;
-        if (updateResult.count !== revalidatedIds.length) {
-          const actuallyExpired = await tx.enrollments.findMany({
-            where: {
-              enrollment_id: { in: revalidatedIds },
-              investiture_status: investiture_status_enum.EXPIRED,
-              validated_by: actorId,
-              validated_at: now,
-            },
-            select: { enrollment_id: true },
-          });
-          auditIds = actuallyExpired.map(
-            (enrollment) => enrollment.enrollment_id,
-          );
-        }
-
-        if (auditIds.length === 0) {
-          return [];
-        }
-
-        await tx.investiture_validation_history.createMany({
-          data: auditIds.map((enrollmentId) => ({
-            enrollment_id: enrollmentId,
-            action: investiture_action_enum.EXPIRED,
-            performed_by: actorId,
-            comments: 'Vencimiento manual de enrollment atrasado',
-          })),
-        });
-
-        return auditIds;
-      });
+      const expiredIds = await this.prisma.$transaction((tx) =>
+        expireEnrollmentsInTx(tx, {
+          enrollmentIds: overdueIds,
+          actorId,
+          comments: 'Vencimiento manual de enrollment atrasado',
+        }),
+      );
       expiredEnrollmentIds = expiredIds;
     }
 

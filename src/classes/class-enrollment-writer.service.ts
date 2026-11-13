@@ -105,6 +105,67 @@ export class ClassEnrollmentWriter {
     }
   }
 
+  /**
+   * Carries an open multi-year enrollment into a new ecclesiastical year:
+   * the SAME row (same enrollment_id, progress, history) moves its
+   * `ecclesiastical_year_id` forward, and `duration_start_year_id` pins the
+   * year the class started counting so min/max duration keeps working.
+   * Idempotent: if the enrollment is already in `toYearId` it is returned as is.
+   * If the user already holds another active regular enrollment in `toYearId`
+   * (partial unique slot) nothing is moved and that row is reported.
+   */
+  async carryForward(
+    tx: DbClient,
+    params: { enrollmentId: number; toYearId: number },
+  ): Promise<{ enrollment_id: number; carried: boolean }> {
+    const row = await tx.enrollments.findUnique({
+      where: { enrollment_id: params.enrollmentId },
+      select: {
+        enrollment_id: true,
+        user_id: true,
+        class_id: true,
+        ecclesiastical_year_id: true,
+        duration_start_year_id: true,
+        active: true,
+        record_kind: true,
+        cross_type_enrollment: true,
+      },
+    });
+    if (!row) {
+      throw new AppConflictException(ErrorCode.CLASS_ENROLLMENT_NOT_FOUND);
+    }
+    if (row.ecclesiastical_year_id === params.toYearId) {
+      return { enrollment_id: row.enrollment_id, carried: false };
+    }
+    if (row.record_kind !== 'OPERATIONAL' || !row.active) {
+      throw new AppConflictException(ErrorCode.CLASS_ENROLLMENT_NOT_FOUND);
+    }
+
+    const occupant = await tx.enrollments.findFirst({
+      where: {
+        user_id: row.user_id,
+        ecclesiastical_year_id: params.toYearId,
+        active: true,
+        record_kind: 'OPERATIONAL',
+        cross_type_enrollment: row.cross_type_enrollment,
+      },
+      select: { enrollment_id: true },
+    });
+    if (occupant) {
+      return { enrollment_id: occupant.enrollment_id, carried: false };
+    }
+
+    await tx.enrollments.update({
+      where: { enrollment_id: row.enrollment_id },
+      data: {
+        ecclesiastical_year_id: params.toYearId,
+        duration_start_year_id:
+          row.duration_start_year_id ?? row.ecclesiastical_year_id,
+      },
+    });
+    return { enrollment_id: row.enrollment_id, carried: true };
+  }
+
   private async rejectSecondGuideMajor(
     tx: DbClient,
     params: { userId: string; classId: number },
@@ -121,6 +182,10 @@ export class ClassEnrollmentWriter {
       where: {
         user_id: params.userId,
         class_id: params.classId,
+        // An EXPIRED row (past max duration without investiture) stays as
+        // history and does not block re-opening the class (migration
+        // 20261115100000 relaxes the DB trigger the same way).
+        investiture_status: { not: 'EXPIRED' },
       },
       select: { enrollment_id: true },
     });

@@ -17,6 +17,11 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { expireEnrollmentsInTx } from '../investiture/enrollment-expiry';
+
+jest.mock('../investiture/enrollment-expiry', () => ({
+  expireEnrollmentsInTx: jest.fn(),
+}));
 
 const YEAR_ID_CURRENT = 2026;
 const CURRENT_YEAR = {
@@ -91,7 +96,7 @@ describe('AnnualMembershipService', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let nextClassResolver: { resolve: jest.Mock };
   let classPolicy: { evaluate: jest.Mock };
-  let classWriter: { upsert: jest.Mock };
+  let classWriter: { upsert: jest.Mock; carryForward: jest.Mock };
   let membershipPolicy: {
     listNotEnrolled: jest.Mock;
     ensureNotEnrolled: jest.Mock;
@@ -116,6 +121,9 @@ describe('AnnualMembershipService', () => {
     classPolicy = { evaluate: jest.fn().mockResolvedValue({ kind: 'ok' }) };
     classWriter = {
       upsert: jest.fn().mockResolvedValue({ enrollment_id: 99, created: true }),
+      carryForward: jest
+        .fn()
+        .mockResolvedValue({ enrollment_id: 77, carried: true }),
     };
     membershipPolicy = {
       listNotEnrolled: jest.fn().mockResolvedValue([]),
@@ -1256,6 +1264,46 @@ describe('AnnualMembershipService', () => {
 
         expect(outcome).toBe('enrolled');
       });
+
+      it('year-cut CQ->GM jump into a multi-year GM class now enrolls through the same path (no actor needed)', async () => {
+        stubSection(GM_SECTION_ID, 'Guías Mayores');
+        stubGmEligible([USER_GM]);
+        prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+        prisma.club_types.findFirst.mockResolvedValue({
+          club_type_id: CQ_TYPE_ID,
+        });
+        prisma.club_sections.findFirst.mockResolvedValue({
+          club_section_id: CQ_SECTION_ID,
+        });
+        prisma.club_role_assignments.create.mockResolvedValue({
+          assignment_id: 'new',
+        });
+        nextClassResolver.resolve.mockResolvedValue({
+          kind: 'next_class',
+          class_id: 308,
+          display_order: 8,
+          club_type_id: 3,
+          club_section_id: GM_SECTION_ID,
+          ecclesiastical_year_id: YEAR_ID_CURRENT,
+          crossed_type: true,
+        });
+
+        const outcome = await service.writeTypeJumpEnrollment(prisma as never, {
+          userId: USER_GM,
+          destSectionId: GM_SECTION_ID,
+          year,
+        });
+
+        expect(outcome).toBe('enrolled');
+        expect(classPolicy.evaluate).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ classId: 308, mode: 'annual' }),
+        );
+        expect(classWriter.upsert).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ classId: 308 }),
+        );
+      });
     });
   });
 
@@ -1756,6 +1804,141 @@ describe('AnnualMembershipService', () => {
       });
       expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
       expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('multi-year Guía Mayor continuation', () => {
+    const gmDecision = (continuation?: unknown) => ({
+      kind: 'next_class',
+      class_id: 308,
+      display_order: 8,
+      club_type_id: 3,
+      club_section_id: GM_SECTION_ID,
+      ecclesiastical_year_id: YEAR_ID_CURRENT,
+      crossed_type: false,
+      ...(continuation ? { continuation } : {}),
+    });
+
+    beforeEach(() => {
+      prisma.club_role_assignments.findFirst.mockResolvedValueOnce({
+        assignment_id: 'gm-not-enrolled-2026',
+        status: 'inactive',
+        role_id: MEMBER_ROLE_ID,
+      });
+    });
+
+    it('keep: carries the SAME enrollment into the year, no new enrollment', async () => {
+      nextClassResolver.resolve.mockResolvedValue(
+        gmDecision({ mode: 'keep', enrollment_id: 77 }),
+      );
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(classPolicy.evaluate).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ classId: 308, continuation: 'keep' }),
+      );
+      expect(classWriter.carryForward).toHaveBeenCalledWith(expect.anything(), {
+        enrollmentId: 77,
+        toYearId: YEAR_ID_CURRENT,
+      });
+      expect(classWriter.upsert).not.toHaveBeenCalled();
+      expect(expireEnrollmentsInTx).not.toHaveBeenCalled();
+      expect(result.results[0]).toMatchObject({
+        outcome: 'enrolled',
+        enrollment_id: 77,
+      });
+    });
+
+    it('next class after investiture goes through the normal enrollment path', async () => {
+      nextClassResolver.resolve.mockResolvedValue({
+        ...gmDecision(),
+        class_id: 309,
+      });
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(classWriter.carryForward).not.toHaveBeenCalled();
+      expect(classWriter.upsert).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ classId: 309 }),
+      );
+      expect(result.results[0]).toMatchObject({
+        outcome: 'enrolled',
+        enrollment_id: 99,
+      });
+    });
+
+    it('reopen: expires the old enrollment as the actor, then opens the class again', async () => {
+      (expireEnrollmentsInTx as jest.Mock).mockResolvedValue([77]);
+      nextClassResolver.resolve.mockResolvedValue(
+        gmDecision({ mode: 'reopen', expire_enrollment_id: 77 }),
+      );
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(expireEnrollmentsInTx).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          enrollmentIds: [77],
+          actorId: ACTOR_ID,
+        }),
+      );
+      expect(classWriter.upsert).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ classId: 308 }),
+      );
+      expect(result.results[0]).toMatchObject({
+        outcome: 'enrolled',
+        enrollment_id: 99,
+      });
+    });
+
+    it('reopen of an already EXPIRED enrollment does not expire again', async () => {
+      nextClassResolver.resolve.mockResolvedValue(
+        gmDecision({ mode: 'reopen', expire_enrollment_id: null }),
+      );
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(expireEnrollmentsInTx).not.toHaveBeenCalled();
+      expect(classWriter.upsert).toHaveBeenCalled();
+      expect(result.results[0].outcome).toBe('enrolled');
+    });
+
+    it('reopen is blocked (nothing written) while a pending investiture request locks the old enrollment', async () => {
+      (expireEnrollmentsInTx as jest.Mock).mockResolvedValue([]);
+      nextClassResolver.resolve.mockResolvedValue(
+        gmDecision({ mode: 'reopen', expire_enrollment_id: 77 }),
+      );
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        outcome: 'blocked',
+        error_code: ErrorCode.INVESTITURE_REQUEST_ACTIVE_EXISTS,
+      });
+      expect(classWriter.upsert).not.toHaveBeenCalled();
     });
   });
 });

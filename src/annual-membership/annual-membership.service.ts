@@ -9,6 +9,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { AnnualMembershipPolicyService } from './annual-membership-policy.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NextClassResolver } from '../classes/next-class.resolver';
+import { expireEnrollmentsInTx } from '../investiture/enrollment-expiry';
 import { ClassEnrollmentPolicyService } from '../classes/class-enrollment-policy.service';
 import { ClassEnrollmentWriter } from '../classes/class-enrollment-writer.service';
 import {
@@ -85,6 +86,8 @@ const CLASS_POLICY_BLOCKED_CODES = new Set<string>([
   ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
   ErrorCode.CLASS_NOT_AVAILABLE_FOR_YEAR,
   ErrorCode.CLASS_NOT_FOUND,
+  // Multi-year reopen: the old enrollment is locked by a pending investiture request.
+  ErrorCode.INVESTITURE_REQUEST_ACTIVE_EXISTS,
   ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
   // An adult cannot be enrolled as an AV/CQ child.
   ErrorCode.ANNUAL_AGE_ABOVE_CLUB_TYPE,
@@ -549,6 +552,7 @@ export class AnnualMembershipService {
       userId: string;
       sectionId: number;
       year: CurrentYear;
+      actorUserId?: string;
     },
   ): Promise<ContinuationUserResult> {
     const memberRole = await tx.roles.findFirst({
@@ -752,6 +756,7 @@ export class AnnualMembershipService {
       userId: string;
       sectionId: number;
       year: CurrentYear;
+      actorUserId?: string;
     },
   ): Promise<ContinuationUserResult> {
     const enrollmentId = await this._applyClassInTransaction(tx, params);
@@ -929,6 +934,8 @@ export class AnnualMembershipService {
       userId: string;
       sectionId: number;
       year: CurrentYear;
+      /** Needed only to audit an EXPIRED transition (multi-year reopen). */
+      actorUserId?: string;
     },
   ): Promise<number | null> {
     const decision = await this.nextClassResolver.resolve(
@@ -952,11 +959,14 @@ export class AnnualMembershipService {
       throw new AppConflictException(ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED);
     }
 
+    const continuation = decision.continuation;
+
     const policy = await this.classEnrollmentPolicy.evaluate(tx, {
       userId: params.userId,
       classId: decision.class_id,
       year: params.year,
       mode: 'annual',
+      continuation: continuation?.mode,
     });
 
     if (policy.kind === 'policy_blocked') {
@@ -964,6 +974,37 @@ export class AnnualMembershipService {
     }
     if (policy.kind === 'configuration_error') {
       throw new AppConflictException(policy.code);
+    }
+
+    // Multi-year class, still inside its duration: the same open enrollment
+    // moves into the new year (no new enrollment, progress and years kept).
+    if (continuation?.mode === 'keep') {
+      const carried = await this.classEnrollmentWriter.carryForward(tx, {
+        enrollmentId: continuation.enrollment_id,
+        toYearId: params.year.year_id,
+      });
+      return carried.enrollment_id;
+    }
+
+    // Past max duration without investiture: expire the old enrollment (same
+    // code path and audit as the overdue sweep) and open the class again.
+    if (continuation?.mode === 'reopen' && continuation.expire_enrollment_id) {
+      if (!params.actorUserId) {
+        throw new AppConflictException(
+          ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+        );
+      }
+      const expired = await expireEnrollmentsInTx(tx, {
+        enrollmentIds: [continuation.expire_enrollment_id],
+        actorId: params.actorUserId,
+        comments: 'Vencimiento por duración máxima en la continuación anual',
+      });
+      if (!expired.includes(continuation.expire_enrollment_id)) {
+        // A pending investiture authorization locks it: cannot expire yet.
+        throw new AppConflictException(
+          ErrorCode.INVESTITURE_REQUEST_ACTIVE_EXISTS,
+        );
+      }
     }
 
     const written = await this.classEnrollmentWriter.upsert(tx, {

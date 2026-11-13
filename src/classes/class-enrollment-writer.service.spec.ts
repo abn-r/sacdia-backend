@@ -177,4 +177,118 @@ describe('ClassEnrollmentWriter', () => {
     ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
     expect(tx.enrollments.create).not.toHaveBeenCalled();
   });
+
+  describe('carryForward (multi-year classes)', () => {
+    const OPEN = {
+      enrollment_id: 77,
+      user_id: USER_ID,
+      class_id: CLASS_ID,
+      ecclesiastical_year_id: 2025,
+      duration_start_year_id: null,
+      active: true,
+      record_kind: 'OPERATIONAL',
+      cross_type_enrollment: false,
+    };
+
+    it('moves the same row into the new year and pins the duration start year', async () => {
+      tx.enrollments.findUnique.mockResolvedValue(OPEN);
+
+      const result = await writer.carryForward(tx as never, {
+        enrollmentId: 77,
+        toYearId: YEAR_ID,
+      });
+
+      expect(result).toEqual({ enrollment_id: 77, carried: true });
+      expect(tx.enrollments.update).toHaveBeenCalledWith({
+        where: { enrollment_id: 77 },
+        data: { ecclesiastical_year_id: YEAR_ID, duration_start_year_id: 2025 },
+      });
+      expect(tx.enrollments.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps an existing duration start year on later carries', async () => {
+      tx.enrollments.findUnique.mockResolvedValue({
+        ...OPEN,
+        ecclesiastical_year_id: 2025,
+        duration_start_year_id: 2024,
+      });
+
+      await writer.carryForward(tx as never, {
+        enrollmentId: 77,
+        toYearId: YEAR_ID,
+      });
+
+      expect(tx.enrollments.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            ecclesiastical_year_id: YEAR_ID,
+            duration_start_year_id: 2024,
+          },
+        }),
+      );
+    });
+
+    it('is idempotent when the enrollment is already in the target year', async () => {
+      tx.enrollments.findUnique.mockResolvedValue({
+        ...OPEN,
+        ecclesiastical_year_id: YEAR_ID,
+      });
+
+      const result = await writer.carryForward(tx as never, {
+        enrollmentId: 77,
+        toYearId: YEAR_ID,
+      });
+
+      expect(result).toEqual({ enrollment_id: 77, carried: false });
+      expect(tx.enrollments.update).not.toHaveBeenCalled();
+    });
+
+    it('does not move it when the user already holds the regular slot of the target year', async () => {
+      tx.enrollments.findUnique.mockResolvedValue(OPEN);
+      tx.enrollments.findFirst.mockResolvedValue({ enrollment_id: 90 });
+
+      const result = await writer.carryForward(tx as never, {
+        enrollmentId: 77,
+        toYearId: YEAR_ID,
+      });
+
+      expect(result).toEqual({ enrollment_id: 90, carried: false });
+      expect(tx.enrollments.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses historical-certificate or inactive rows', async () => {
+      tx.enrollments.findUnique.mockResolvedValue({
+        ...OPEN,
+        record_kind: 'HISTORICAL_CERTIFICATE',
+      });
+
+      await expect(
+        writer.carryForward(tx as never, {
+          enrollmentId: 77,
+          toYearId: YEAR_ID,
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ENROLLMENT_NOT_FOUND });
+    });
+  });
+
+  it('re-opening GM-01 ignores an EXPIRED previous row but not a live one', async () => {
+    tx.classes.findUnique.mockResolvedValue({ asset_code: 'GM-01' });
+    tx.enrollments.findUnique.mockResolvedValue(null);
+    tx.enrollments.create.mockResolvedValue({ enrollment_id: 88 });
+
+    await writer.upsert(tx as never, {
+      userId: USER_ID,
+      classId: CLASS_ID,
+      ecclesiasticalYearId: YEAR_ID,
+      crossType: false,
+      ifExists: 'return',
+    });
+
+    expect(tx.enrollments.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        investiture_status: { not: 'EXPIRED' },
+      }),
+      select: { enrollment_id: true },
+    });
+  });
 });

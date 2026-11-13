@@ -1,3 +1,4 @@
+import { durationStartDate } from '../classes/enrollment-duration';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma, investiture_status_enum } from '@prisma/client';
@@ -259,6 +260,7 @@ type EnrollmentRow = {
     asset_code?: string | null;
   } | null;
   ecclesiastical_year: { start_date: Date } | null;
+  duration_start_year?: { start_date: Date } | null;
 };
 
 const ENROLLMENT_ROW_SELECT = {
@@ -282,6 +284,7 @@ const ENROLLMENT_ROW_SELECT = {
     },
   },
   ecclesiastical_year: { select: { start_date: true } },
+  duration_start_year: { select: { start_date: true } },
 } satisfies Prisma.enrollmentsSelect;
 
 const PRESENTATION_CANDIDATE_SELECT = {
@@ -2452,7 +2455,10 @@ export class InvestitureAuthorizationRequestService {
     const elapsed = await store.ecclesiastical_years.count({
       where: {
         start_date: {
-          gte: enrollment.ecclesiastical_year.start_date,
+          gte: durationStartDate({
+            ecclesiastical_year: enrollment.ecclesiastical_year,
+            duration_start_year: enrollment.duration_start_year,
+          }),
           lte: civilDateToUtc(context.yearStart),
         },
       },

@@ -33,6 +33,12 @@ export class ClassEnrollmentPolicyService {
       classId: number;
       year: { year_id: number; start_date: Date; end_date?: Date };
       mode: ClassPolicyMode;
+      /**
+       * `keep`: the member already holds this multi-year class and the same
+       * enrollment is carried into the year, so availability, investiture and
+       * prerequisite gates (which guard STARTING a class) do not apply again.
+       */
+      continuation?: 'keep' | 'reopen';
     },
   ): Promise<ClassPolicyDecision> {
     const targetClass = await tx.classes.findUnique({
@@ -44,7 +50,6 @@ export class ClassEnrollmentPolicyService {
         active: true,
         minimum_age: true,
         requires_invested_gm: true,
-        max_duration_years: true,
         available_from_year: { select: { start_date: true } },
         available_until_year: { select: { start_date: true } },
       },
@@ -54,11 +59,11 @@ export class ClassEnrollmentPolicyService {
       return { kind: 'policy_blocked', code: ErrorCode.CLASS_NOT_FOUND };
     }
 
-    if (params.mode === 'annual' && targetClass.max_duration_years > 1) {
-      return {
-        kind: 'configuration_error',
-        code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
-      };
+    // Multi-year classes (max_duration_years > 1) used to dead-end here with
+    // ANNUAL_CLASS_POLICY_UNRESOLVED. NextClassResolver now decides keep / next
+    // class / reopen for them, so annual mode no longer needs to refuse them.
+    if (params.continuation === 'keep') {
+      return { kind: 'ok' };
     }
 
     const startsAfterFrom =
