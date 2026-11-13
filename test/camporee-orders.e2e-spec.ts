@@ -42,6 +42,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthorizationContextService } from '../src/common/services/authorization-context.service';
+import { InstitutionalHierarchyService } from '../src/common/services/institutional-hierarchy.service';
 import { FILE_STORAGE_SERVICE } from '../src/common/services/file-storage.service';
 import { UserAwareThrottlerGuard } from '../src/config/user-aware-throttler.guard';
 import {
@@ -231,6 +232,17 @@ describe('Camporee Orders E2E — proof and two-level delivery', () => {
       .useValue(mockFileStorage)
       .overrideProvider(AuthorizationContextService)
       .useValue(mockAuthorizationContext)
+      // The camporee resource policy resolves the camporee's territory through
+      // the hierarchy service, which runs raw SQL the Prisma auto-mock cannot
+      // answer. Pin the local field the fixtures already use.
+      .overrideProvider(InstitutionalHierarchyService)
+      .useValue({
+        resolveCurrent: jest.fn(async () => ({
+          division_id: null,
+          union_id: null,
+          local_field_id: LF_ID,
+        })),
+      })
       .overrideProvider(PrismaService)
       .useValue(
         createAutoMock({
@@ -333,6 +345,8 @@ describe('Camporee Orders E2E — proof and two-level delivery', () => {
     prismaMock.camporee_orders.findFirst.mockResolvedValue(null);
     prismaMock.system_config.findUnique.mockResolvedValue(null);
     prismaMock.local_camporees.findUnique.mockResolvedValue({
+      local_field_id: LF_ID,
+      local_fields: { union_id: 2, unions: { country_id: 1 } },
       orders_enabled: true,
       orders_opens_at: null,
       orders_deadline: FUTURE,

@@ -880,49 +880,16 @@ describe('Camporees E2E Tests', () => {
       ]);
     });
 
-    it('should register member without insurance', async () => {
-      const registerWithoutInsurance = {
-        user_id: TEST_USER_ID_2,
-        camporee_type: 'local',
-        club_name: 'Club Aventureros',
-      };
-
-      const memberWithoutInsurance = {
-        ...mockCamporeeMember,
-        user_id: TEST_USER_ID_2,
-        insurance_verified: false,
-        insurance_id: null,
-        insurance: null,
-      };
-
-      const transactionFixture = installParticipantGate(
-        {
-          local_camporees: {
-            findUnique: jest.fn().mockResolvedValue(mockCamporee),
-          },
-          users: {
-            findUnique: jest
-              .fn()
-              .mockResolvedValue({ ...mockUser, user_id: TEST_USER_ID_2 }),
-          },
-          camporee_members: {
-            findFirst: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(memberWithoutInsurance),
-          },
-        },
-        undefined,
-        { userId: TEST_USER_ID_2 },
-      );
-
-      const response = await postAsUser(
-        `/api/v1/camporees/${TEST_CAMPOREE_ID}/register`,
-      )
-        .send(registerWithoutInsurance)
-        .expect(201);
-
-      expect(response.body.insurance_verified).toBe(false);
-      expect(response.body.insurance_id).toBeNull();
-      transactionFixture.$assertLockExpectationsConsumed();
+    it('should reject registration without insurance_id (insurance is mandatory)', async () => {
+      // RegisterMemberDto declares insurance_id as required, so the
+      // validation pipe rejects the request before reaching the service.
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+        .send({
+          user_id: TEST_USER_ID_2,
+          camporee_type: 'local',
+          club_name: 'Club Aventureros',
+        })
+        .expect(400);
     });
 
     it('should reject if insurance type is wrong (not CAMPOREE)', async () => {

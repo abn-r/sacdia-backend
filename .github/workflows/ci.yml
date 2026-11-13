@@ -299,6 +299,8 @@ jobs:
             test/activities.e2e-spec.ts \
             test/app.e2e-spec.ts \
             test/auth.e2e-spec.ts \
+            test/camporee-orders.e2e-spec.ts \
+            test/camporees.e2e-spec.ts \
             test/certifications.e2e-spec.ts \
             test/classes-progress-migration.e2e-spec.ts \
             test/clubs.e2e-spec.ts \
