@@ -25,7 +25,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "generate:spec": "npx ts-node scripts/generate-openapi.ts",
+    "generate:spec": "ts-node scripts/generate-openapi.ts",
     "authz:generate": "tsx scripts/authz/generate-catalog.ts",
     "authz:check": "tsx scripts/authz/generate-catalog.ts --check",
     "load-test": "node scripts/load-test.js",
@@ -46,7 +46,8 @@
     "benchmark:spike": "node scripts/benchmark-api.js --profile spike",
     "benchmark:self-test": "node --test scripts/benchmark-api.test.js",
     "backfill:local-field-timezones": "tsx scripts/backfill-local-field-timezones.ts",
-    "reports:backfill-pdfs": "tsx scripts/backfill-monthly-report-pdfs.ts",
+    "reports:backfill-pdfs": "ts-node -T scripts/backfill-monthly-report-pdfs.ts",
+    "family:majority-release-dry-run": "ts-node -T scripts/family-profiles/majority-release-dry-run.ts",
     "mfa:encrypt-totp-secrets": "tsx scripts/encrypt-totp-secrets.ts"
   },
   "dependencies": {

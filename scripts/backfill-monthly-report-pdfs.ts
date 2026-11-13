@@ -265,11 +265,15 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   };
   process.once('SIGINT', onSigint);
 
-  const { NestFactory } = await import('@nestjs/core');
-  const { AppModule } = await import('../src/app.module.js');
+  // `require` (not `import()`): see majority-release-dry-run.ts (ts-node, CJS).
+  const { NestFactory } =
+    require('@nestjs/core') as typeof import('@nestjs/core');
+  const { AppModule } =
+    require('../src/app.module') as typeof import('../src/app.module');
   const { MonthlyReportArtifactsService } =
-    await import('../src/monthly-reports/monthly-report-artifacts.service.js');
-  const { PrismaService } = await import('../src/prisma/prisma.service.js');
+    require('../src/monthly-reports/monthly-report-artifacts.service') as typeof import('../src/monthly-reports/monthly-report-artifacts.service');
+  const { PrismaService } =
+    require('../src/prisma/prisma.service') as typeof import('../src/prisma/prisma.service');
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: false,
   });
