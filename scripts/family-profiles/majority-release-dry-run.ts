@@ -9,8 +9,9 @@
  * gate is lazy, turning the flag on gates EVERY tracked 18+ person at once.
  *
  * HOW TO RUN
- *   npx tsx scripts/family-profiles/majority-release-dry-run.ts
- *   npx tsx scripts/family-profiles/majority-release-dry-run.ts --only <uuid>
+ *   pnpm family:majority-release-dry-run
+ *   (ts-node, NOT tsx: tsx/esbuild does not emit decorator metadata, so Nest DI breaks)
+ *   pnpm family:majority-release-dry-run -- --only <uuid>
  *
  * Requires DATABASE_URL (loaded from .env). Prints counts by step and by
  * country; uuids only (never a name or an email), one per line with --list.
@@ -97,10 +98,14 @@ async function main(): Promise<void> {
   }
   await import('dotenv/config');
 
-  const { NestFactory } = await import('@nestjs/core');
-  const { AppModule } = await import('../../src/app.module.js');
+  // `require` (not `import()`): `ts-node` runs this file as CJS and a dynamic
+  // `import('./x.js')` would go through Node's ESM loader, which cannot find `.ts`.
+  const { NestFactory } =
+    require('@nestjs/core') as typeof import('@nestjs/core');
+  const { AppModule } =
+    require('../../src/app.module') as typeof import('../../src/app.module');
   const { FamilyMajorityReleaseCronService } =
-    await import('../../src/guardianships/family-majority-release-cron.service.js');
+    require('../../src/guardianships/family-majority-release-cron.service') as typeof import('../../src/guardianships/family-majority-release-cron.service');
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: false,
   });
