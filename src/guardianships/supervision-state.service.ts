@@ -9,6 +9,7 @@ import { FamilyFeatureFlagsService } from './family-feature-flags.service';
 import { ACTIVE_USER_GUARDIAN, displayName } from './guardianship-queries';
 import {
   MAJORITY_NOTICE_DAYS,
+  PENDING_GUARDIAN_FROZEN_REASON,
   PENDING_TEEN_FREEZE_DAYS,
   type LinkCodePurpose,
 } from './guardianships.constants';
@@ -29,8 +30,17 @@ export interface SupervisionView {
   guardians: SupervisionGuardianView[];
   /** Static transparency: what the teen is told guardians can see. */
   summary_visible_to_guardians: true;
-  /** Whole days left before the 90-day removal; null when the clock is stopped. */
+  /**
+   * Whole days left before the 90-day PAUSE (the account is frozen, never
+   * deleted); null when the clock is stopped or the account is already paused.
+   */
   days_left: number | null;
+  /**
+   * When the account was paused for lack of a verified guardian (day-90 freeze,
+   * `frozen_reason = 'pending_guardian'`); null when not paused. It thaws as
+   * soon as a guardian is linked AND verified; it is never deleted automatically.
+   */
+  frozen_at: string | null;
   /**
    * Phase 4 (flag FAMILY_MAJORITY_RELEASE_ENABLED): the ISO date (YYYY-MM-DD) on
    * which the teen reaches the age of majority, only while the 30-day notice
@@ -95,10 +105,14 @@ export class SupervisionStateService {
     status: 'pending_guardian' | 'active',
     now: Date = new Date(),
   ): Promise<SupervisionView> {
-    const [login, guardianships, majority] = await Promise.all([
+    const [login, profile, guardianships, majority] = await Promise.all([
       this.prisma.supervised_logins.findUnique({
         where: { user_id: userId },
         select: { pending_since: true },
+      }),
+      this.prisma.dependent_profiles.findUnique({
+        where: { user_id: userId },
+        select: { frozen_at: true, frozen_reason: true, purged_at: true },
       }),
       this.prisma.guardianships.findMany({
         where: { dependent_user_id: userId, ...ACTIVE_USER_GUARDIAN },
@@ -128,19 +142,28 @@ export class SupervisionStateService {
         ? null
         : login.pending_since;
 
+    const pausedAt =
+      profile &&
+      !profile.purged_at &&
+      profile.frozen_at &&
+      profile.frozen_reason === PENDING_GUARDIAN_FROZEN_REASON
+        ? profile.frozen_at
+        : null;
+
     return {
       status,
       pending_since: pendingSince ? pendingSince.toISOString() : null,
       guardians,
       summary_visible_to_guardians: true,
       days_left:
-        status === 'pending_guardian' && pendingSince
+        status === 'pending_guardian' && pendingSince && !pausedAt
           ? Math.max(
               0,
               PENDING_TEEN_FREEZE_DAYS -
                 Math.floor((now.getTime() - pendingSince.getTime()) / DAY_MS),
             )
           : null,
+      frozen_at: pausedAt ? pausedAt.toISOString() : null,
       ...majority,
     };
   }

@@ -28,9 +28,10 @@ import { CONSENT_EVIDENCE_MIME_TYPES } from './consent-evidence-file.pipe';
 import {
   ACTIVE_USER_GUARDIAN,
   NOT_REVOKED,
-  VISIBLE_DEPENDENT,
+  REACHABLE_FOR_GUARDIAN_LINK,
   displayName,
   findConsentRow,
+  isDeadDependentProfile,
   findSectionAssignment,
   lockDependent,
 } from './guardianship-queries';
@@ -333,7 +334,7 @@ export class GuardianEvidenceService {
         ...ACTIVE_USER_GUARDIAN,
         dependent_user_id: dependentId,
         guardian_user_id: guardianId,
-        dependent: VISIBLE_DEPENDENT,
+        dependent: REACHABLE_FOR_GUARDIAN_LINK,
       },
       select: { guardianship_id: true },
     });
@@ -368,10 +369,16 @@ export class GuardianEvidenceService {
     }
     const profile = await this.prisma.dependent_profiles.findUnique({
       where: { user_id: assignment.user_id },
-      select: { user_id: true, frozen_at: true, purged_at: true },
+      select: {
+        user_id: true,
+        frozen_at: true,
+        frozen_reason: true,
+        purged_at: true,
+      },
     });
-    if (profile?.frozen_at || profile?.purged_at) {
-      // Dead data: hidden from the lists, nothing to attach a form to.
+    if (isDeadDependentProfile(profile)) {
+      // Dead data: hidden from the lists, nothing to attach a form to. A teen
+      // frozen as `pending_guardian` is not dead: the verification thaws it.
       throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
     }
     if (!profile) {

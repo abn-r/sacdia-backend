@@ -589,8 +589,14 @@ describe('GuardianshipsService reads', () => {
       is_custodian: false,
       is_test_data: false,
       consent_status: { not: 'revoked' },
+      // Reachable: not purged and (not frozen OR frozen as pending_guardian).
       dependent: {
-        dependent_profile: { is: { frozen_at: null, purged_at: null } },
+        dependent_profile: {
+          is: {
+            purged_at: null,
+            OR: [{ frozen_at: null }, { frozen_reason: 'pending_guardian' }],
+          },
+        },
       },
     });
     expect(result.limits).toEqual({ max_dependents: 10, max_devices: 2 });

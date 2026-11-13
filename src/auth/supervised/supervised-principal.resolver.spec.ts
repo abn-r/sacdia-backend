@@ -6,6 +6,7 @@ import {
 } from '../../common/age/country-age-policy.service';
 import {
   SUPERVISED_STATE_MEMO,
+  TEEN_PENDING_FROZEN_SCOPES,
   TEEN_PENDING_SCOPES,
   TEEN_SCOPES,
 } from '../acting-for/auth-principal';
@@ -288,6 +289,90 @@ describe('SupervisedPrincipalResolver', () => {
       expect(scopesForSupervision('pending_guardian')).toBe(
         TEEN_PENDING_SCOPES,
       );
+      // A paused teen (frozen as pending_guardian) can also end the own account.
+      expect(scopesForSupervision('pending_guardian', true)).toBe(
+        TEEN_PENDING_FROZEN_SCOPES,
+      );
+      expect(TEEN_PENDING_FROZEN_SCOPES).toEqual([
+        ...TEEN_PENDING_SCOPES,
+        'account:manage',
+      ]);
+      expect(TEEN_PENDING_SCOPES).not.toContain('account:manage');
+    });
+  });
+
+  describe('paused teen (frozen as pending_guardian, ruling 2026-11-13)', () => {
+    const paused = (extra: Partial<UserRow> = {}) =>
+      user({
+        dependent_profile: {
+          frozen_at: NOW,
+          purged_at: null,
+          frozen_reason: 'pending_guardian',
+        },
+        ...extra,
+      });
+
+    it('is NOT blocked: it resolves as supervised pending_guardian + frozen (it can still log in)', async () => {
+      prisma.users.findUnique.mockResolvedValue(paused());
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'supervised',
+        supervision: 'pending_guardian',
+        frozen: true,
+      });
+    });
+
+    it('keeps the login method in the state', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        paused({ supervised_login: { disabled_at: null, method: 'email' } }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'supervised',
+        supervision: 'pending_guardian',
+        frozen: true,
+        login_method: 'email',
+      });
+    });
+
+    it('a purged pending_guardian profile is still blocked', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({
+          dependent_profile: {
+            frozen_at: NOW,
+            purged_at: NOW,
+            frozen_reason: 'pending_guardian',
+          },
+        }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'frozen',
+      });
+    });
+
+    it('a login a guardian disabled still blocks it', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        paused({ supervised_login: { disabled_at: NOW } }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'login_disabled',
+      });
+    });
+
+    it('a freeze for ANY OTHER reason stays blocked', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({
+          dependent_profile: {
+            frozen_at: NOW,
+            purged_at: null,
+            frozen_reason: 'majority_release',
+          },
+        }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'frozen',
+      });
     });
   });
 

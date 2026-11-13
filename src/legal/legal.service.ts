@@ -7,6 +7,7 @@ import {
 } from '../common/errors/app.exception';
 import { HttpStatus } from '@nestjs/common';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import { RELEASE_THAWABLE_FROZEN_REASONS } from '../guardianships/guardianships.constants';
 import { ReleaseCompletionService } from '../guardianships/release-completion.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import type { SessionRequestContext } from '../better-auth/better-auth.service';
@@ -144,7 +145,10 @@ export class LegalService {
           purged_at: null,
           release_accepted_at: null,
           // A legacy freeze (minor without a guardian) is not a release.
-          OR: [{ frozen_at: null }, { frozen_reason: 'majority_release' }],
+          OR: [
+            { frozen_at: null },
+            { frozen_reason: { in: [...RELEASE_THAWABLE_FROZEN_REASONS] } },
+          ],
         },
         data: { release_accepted_at: now },
       });
@@ -163,7 +167,9 @@ export class LegalService {
           profile.purged_at === null &&
           profile.release_accepted_at !== null &&
           (profile.frozen_at === null ||
-            profile.frozen_reason === 'majority_release');
+            (
+              RELEASE_THAWABLE_FROZEN_REASONS as readonly (string | null)[]
+            ).includes(profile.frozen_reason));
         if (!live) {
           throw new AppException(
             ErrorCode.FAMILY_RELEASE_NOT_PENDING,

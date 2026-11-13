@@ -82,9 +82,6 @@ function setup() {
       timeZone: 'America/Mexico_City',
     }),
   };
-  const blacklist = {
-    blacklistAllUserTokens: jest.fn().mockResolvedValue(undefined),
-  };
   const revoker = { revokeAllForDependent: jest.fn().mockResolvedValue(0) };
   const service = new PendingTeenCronService(
     prisma,
@@ -93,7 +90,6 @@ function setup() {
     cache as any,
     notifications as any,
     agePolicy as any,
-    blacklist as any,
     revoker as any,
   );
   return {
@@ -105,7 +101,6 @@ function setup() {
     cache,
     notifications,
     agePolicy,
-    blacklist,
     revoker,
   };
 }
@@ -273,6 +268,9 @@ describe('PendingTeenCronService reminders', () => {
       const [dto, sentBy, source] = ctx.notifications.sendToUser.mock.calls[0];
       expect(dto.userId).toBe(TEEN);
       expect(dto.body).toContain(`${90 - days} días`);
+      // The teen is never told the account will be deleted: it is paused.
+      expect(dto.body).not.toMatch(/elimin/i);
+      expect(dto.body).toContain('pausa');
       expect(sentBy).toBe('system');
       expect(source).toBe('family:teen_reminder');
     },
@@ -399,7 +397,7 @@ describe('PendingTeenCronService freeze at day 90', () => {
     return ctx;
   }
 
-  it('freezes in ONE transaction with purge_after = now + 90 days', async () => {
+  it('freezes in ONE transaction as pending_guardian with NO purge_after (never auto-deleted)', async () => {
     const ctx = frozenSetup();
 
     const summary = await ctx.service.run(NOW);
@@ -412,23 +410,18 @@ describe('PendingTeenCronService freeze at day 90', () => {
       user_id: TEEN,
       created_by_user_id: TEEN,
       frozen_at: NOW,
-      purge_after: new Date(NOW.getTime() + 90 * DAY),
+      frozen_reason: 'pending_guardian',
+      purge_after: null,
     });
-    expect(upsert.update).toMatchObject({
+    expect(upsert.update).toEqual({
       frozen_at: NOW,
-      purge_after: new Date(NOW.getTime() + 90 * DAY),
+      frozen_reason: 'pending_guardian',
+      purge_after: null,
     });
-    expect(ctx.tx.supervised_logins.update).toHaveBeenCalledWith({
-      where: { user_id: TEEN },
-      data: {
-        disabled_at: NOW,
-        disabled_reason: 'unlinked_purged',
-        disabled_by_user_id: null,
-      },
-    });
-    expect(ctx.tx.session.deleteMany).toHaveBeenCalledWith({
-      where: { userId: TEEN },
-    });
+    // The teen keeps logging in (status, link a guardian, delete the account):
+    // the login is NOT disabled and the sessions are NOT deleted.
+    expect(ctx.tx.supervised_logins.update).not.toHaveBeenCalled();
+    expect(ctx.tx.session.deleteMany).not.toHaveBeenCalled();
     expect(ctx.revoker.revokeAllForDependent).toHaveBeenCalledWith(
       ctx.tx,
       TEEN,
@@ -436,10 +429,6 @@ describe('PendingTeenCronService freeze at day 90', () => {
     );
     expect(ctx.tx.$executeRaw).toHaveBeenCalled();
     // After the commit.
-    expect(ctx.blacklist.blacklistAllUserTokens).toHaveBeenCalledWith(
-      TEEN,
-      28_800,
-    );
     expect(ctx.cache.bump).toHaveBeenCalledWith(TEEN);
     expect(ctx.notifications.sendToUser).not.toHaveBeenCalled();
   });
@@ -479,18 +468,28 @@ describe('PendingTeenCronService freeze at day 90', () => {
 
   it('a transaction failure rolls the whole freeze back and fails the teen only', async () => {
     const ctx = frozenSetup();
-    ctx.tx.session.deleteMany.mockRejectedValue(new Error('deadlock'));
+    ctx.revoker.revokeAllForDependent.mockRejectedValue(new Error('deadlock'));
     const summary = await ctx.service.run(NOW);
     expect(summary).toMatchObject({ frozen: 0, failed: 1 });
     expect(ctx.cache.bump).not.toHaveBeenCalled();
   });
 
-  it('a blacklist outage after the commit does not undo the freeze', async () => {
-    const ctx = frozenSetup();
-    ctx.blacklist.blacklistAllUserTokens.mockRejectedValue(new Error('redis'));
+  it('a teen already frozen as pending_guardian is never frozen or reminded again', async () => {
+    const ctx = setup();
+    withRows(ctx, [
+      {
+        user_id: TEEN,
+        pending_since: daysAgo(120),
+        pending_reminder_level: 3,
+        user: {
+          dependent_profile: { frozen_at: daysAgo(30), purged_at: null },
+        },
+      },
+    ]);
     const summary = await ctx.service.run(NOW);
-    expect(summary.frozen).toBe(1);
-    expect(ctx.cache.bump).toHaveBeenCalledWith(TEEN);
+    expect(summary).toMatchObject({ frozen: 0, reminders: 0, failed: 0 });
+    expect(ctx.prisma.$transaction).not.toHaveBeenCalled();
+    expect(ctx.notifications.sendToUser).not.toHaveBeenCalled();
   });
 
   it('one failing teen does not stop the others', async () => {

@@ -122,6 +122,17 @@ export const TEEN_PENDING_SCOPES = [
   'push:register',
 ] as const satisfies readonly ActingForScope[];
 
+/**
+ * A teen frozen at day 90 without a verified guardian (`frozen_reason =
+ * 'pending_guardian'`, never auto-deleted). Same surface as pending-guardian
+ * mode PLUS `account:manage`: the person (and only the person) can end their own
+ * account (DELETE /auth/me) and manage their sessions while paused.
+ */
+export const TEEN_PENDING_FROZEN_SCOPES = [
+  ...TEEN_PENDING_SCOPES,
+  'account:manage',
+] as const satisfies readonly ActingForScope[];
+
 /** A teen with a verified guardian: the full member app minus sensitive routes. */
 export const TEEN_SCOPES = [
   'self:read',

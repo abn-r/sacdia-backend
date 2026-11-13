@@ -60,6 +60,10 @@ describe('MembershipRequestsService', () => {
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    // Custody-only persons that hold an account are teens (paused, not purged).
+    account: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     // Per-dependent advisory lock taken by the consent gate.
     $executeRaw: jest.fn().mockResolvedValue(1),
   });
@@ -1042,6 +1046,30 @@ describe('MembershipRequestsService', () => {
       );
     });
 
+    it('a custody-only person that HOLDS an account (a teen) is paused as pending_guardian with NO purge date', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR)],
+        profiles: [MINOR],
+        holders: [custody(MINOR)],
+      });
+      transactionMock.account.findMany.mockResolvedValue([{ userId: MINOR }]);
+      const before = Date.now();
+
+      await expect(service.expireStaleRequests()).resolves.toBe(1);
+
+      const call = transactionMock.dependent_profiles.updateMany.mock
+        .calls[0][0] as {
+        data: {
+          frozen_at: Date;
+          frozen_reason: string;
+          purge_after: Date | null;
+        };
+      };
+      expect(call.data.frozen_at.getTime()).toBeGreaterThanOrEqual(before);
+      expect(call.data.frozen_reason).toBe('pending_guardian');
+      expect(call.data.purge_after).toBeNull();
+    });
+
     it('takes the dependent locks BEFORE the bulk write (approve locks then writes: the opposite order would deadlock)', async () => {
       arrange({
         candidates: [expired31('a1', MINOR), expired31('a2', OTHER_MINOR)],
@@ -1670,7 +1698,15 @@ describe('MembershipRequestsService', () => {
             OR: [
               { dependent_profile: { is: null } },
               {
-                dependent_profile: { is: { frozen_at: null, purged_at: null } },
+                dependent_profile: {
+                  is: {
+                    purged_at: null,
+                    OR: [
+                      { frozen_at: null },
+                      { frozen_reason: 'pending_guardian' },
+                    ],
+                  },
+                },
               },
             ],
           },
@@ -1813,11 +1849,21 @@ describe('MembershipRequestsService', () => {
         club_section_id: { in: [10, 20, 30] },
         status: 'pending',
         active: true,
-        // frozen / purged dependents are dead data
+        // frozen / purged dependents are dead data (a pending_guardian teen is not)
         users: {
           OR: [
             { dependent_profile: { is: null } },
-            { dependent_profile: { is: { frozen_at: null, purged_at: null } } },
+            {
+              dependent_profile: {
+                is: {
+                  purged_at: null,
+                  OR: [
+                    { frozen_at: null },
+                    { frozen_reason: 'pending_guardian' },
+                  ],
+                },
+              },
+            },
           ],
         },
       });
@@ -1933,7 +1979,17 @@ describe('MembershipRequestsService', () => {
         users: {
           OR: [
             { dependent_profile: { is: null } },
-            { dependent_profile: { is: { frozen_at: null, purged_at: null } } },
+            {
+              dependent_profile: {
+                is: {
+                  purged_at: null,
+                  OR: [
+                    { frozen_at: null },
+                    { frozen_reason: 'pending_guardian' },
+                  ],
+                },
+              },
+            },
           ],
         },
       });

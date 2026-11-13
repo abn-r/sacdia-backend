@@ -112,12 +112,12 @@ export const EDGE_MATRIX: Record<string, Row> = {
   },
   'E3-3': {
     scenario:
-      'Teen with no guardian: reminders, freeze at day 90, login 403 FROZEN, purge 90 days later',
+      'Teen with no guardian: reminders, pause (freeze as pending_guardian) at day 90, never auto-purged (ruling 2026-11-13); club-custody minors keep the 90-day purge',
     evidence: [
       ev(PENDING_CRON, 'day %i sends reminder level %i -> %i to the teen only'),
       ev(
         PENDING_CRON,
-        'freezes in ONE transaction with purge_after = now + 90 days',
+        'freezes in ONE transaction as pending_guardian with NO purge_after (never auto-deleted)',
       ),
       ev(
         BETTER_AUTH,

@@ -17,6 +17,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import {
   MAJORITY_RELEASE_FROZEN_REASON,
+  PENDING_GUARDIAN_FROZEN_REASON,
   PURGED_DEVICE_LABEL,
   PURGED_GUARDIAN_NAME,
 } from './guardianships.constants';
@@ -43,8 +44,10 @@ export interface PurgeSummary {
  * Phase 4 (ruling R6): a released adult frozen by the majority release
  * (`frozen_reason = 'majority_release'`) is NEVER purged here, permanently and
  * independent of the FAMILY_MAJORITY_RELEASE_ENABLED flag. Only the person can
- * ask for deletion (DELETE /auth/me). Legacy freezes (`frozen_reason` NULL) keep
- * the 90-day purge.
+ * ask for deletion (DELETE /auth/me). Same for a self-registered teen frozen at
+ * day 90 without a verified guardian (`frozen_reason = 'pending_guardian'`,
+ * ruling 2026-11-13). Legacy freezes (`frozen_reason` NULL: club-custody minors,
+ * ruling A9) keep the 90-day purge.
  *
  * Per dependent:
  *   1. The R2 object keys are collected (consent evidence files, the profile
@@ -142,10 +145,18 @@ export class DependentProfilesPurgeCronService {
           purge_after: { lte: now },
           // Ruling R6: a released adult frozen by the majority release is NEVER
           // auto-purged, whatever the flag says or a stray purge_after holds.
-          // Explicit OR: a bare `not` would also drop the NULL (legacy) rows.
+          // Same for a teen frozen as `pending_guardian` (ruling 2026-11-13).
+          // Explicit OR: a bare `notIn` would also drop the NULL (legacy) rows.
           OR: [
             { frozen_reason: null },
-            { frozen_reason: { not: MAJORITY_RELEASE_FROZEN_REASON } },
+            {
+              frozen_reason: {
+                notIn: [
+                  MAJORITY_RELEASE_FROZEN_REASON,
+                  PENDING_GUARDIAN_FROZEN_REASON,
+                ],
+              },
+            },
           ],
           ...(failedIds.length > 0 ? { user_id: { notIn: failedIds } } : {}),
         },

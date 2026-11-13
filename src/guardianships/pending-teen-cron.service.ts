@@ -5,12 +5,11 @@ import { ageToday } from '../common/age/age.util';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
-import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ACTIVE_USER_GUARDIAN, lockDependent } from './guardianship-queries';
 import {
-  FROZEN_PURGE_AFTER_DAYS,
+  PENDING_GUARDIAN_FROZEN_REASON,
   PENDING_TEEN_FREEZE_DAYS,
   PENDING_TEEN_REMINDER_DAYS,
 } from './guardianships.constants';
@@ -25,8 +24,6 @@ const LOCK_KEY = 'cron:pending-teen-guardian';
 const LOCK_TTL_MS = 23 * 60 * 60 * 1000;
 const BATCH_SIZE = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Same as the access token TTL: tokens issued before the freeze die with it. */
-const JWT_TTL_SECONDS = 28_800;
 /**
  * Coarse prefilter for the lazy clock start: nobody older than this can be a
  * minor in any country, so adults never get scanned.
@@ -51,10 +48,13 @@ export interface PendingTeenSummary {
  *      of the guardian-less clock. After an outage only the LATEST due reminder
  *      is sent, once (`pending_reminder_level` is claimed before sending).
  *   3. At day 90 the account is frozen: one transaction marks the dependent
- *      profile frozen (`purge_after = now + 90 days`, ruling R9), disables the
- *      supervised login (`unlinked_purged`) and deletes the sessions. A pending
- *      (unverified) link counts as linked and stops the clock. The hard delete
- *      of the personal data belongs to {@link DependentProfilesPurgeCronService}.
+ *      profile frozen with `frozen_reason = 'pending_guardian'` and NO
+ *      `purge_after` (ruling 2026-11-13: a teen is NEVER auto-deleted; only the
+ *      person can ask for deletion). The supervised login stays ENABLED and the
+ *      sessions are kept: the teen still logs in to see the status, link a
+ *      guardian and delete the account. The freeze lifts when a guardian is
+ *      linked AND verified (consent verification). A pending (unverified) link
+ *      counts as linked and stops the clock. The purge cron skips the reason.
  *
  * Nothing here touches a person who reached the age of majority.
  */
@@ -69,7 +69,6 @@ export class PendingTeenCronService {
     private readonly actingForCache: ActingForCache,
     private readonly notifications: NotificationsService,
     private readonly countryAgePolicy: CountryAgePolicyService,
-    private readonly tokenBlacklist: TokenBlacklistService,
     @Inject(LINKED_DEVICE_REVOKER)
     private readonly deviceRevoker: LinkedDeviceRevoker,
   ) {}
@@ -296,10 +295,10 @@ export class PendingTeenCronService {
         {
           userId: teenId,
           title: 'Vincula a un adulto como tu tutor',
-          body: `Tu cuenta necesita un tutor. Si no lo vinculas, se eliminará en ${Math.max(
+          body: `Tu cuenta necesita un tutor. Si no lo vinculas en ${Math.max(
             daysLeft,
             0,
-          )} días.`,
+          )} días, tu cuenta quedará en pausa hasta que un tutor verificado la reactive.`,
           data: {
             type: 'teen_guardian_reminder',
             event: 'teen_guardian_reminder',
@@ -349,32 +348,22 @@ export class PendingTeenCronService {
       });
       if (linked > 0) return false;
 
+      // No purge_after: the frozen CHECK requires it NULL for this reason.
       await tx.dependent_profiles.upsert({
         where: { user_id: teenId },
         update: {
           frozen_at: now,
-          purge_after: new Date(
-            now.getTime() + FROZEN_PURGE_AFTER_DAYS * DAY_MS,
-          ),
+          frozen_reason: PENDING_GUARDIAN_FROZEN_REASON,
+          purge_after: null,
         },
         create: {
           user_id: teenId,
           created_by_user_id: teenId,
           frozen_at: now,
-          purge_after: new Date(
-            now.getTime() + FROZEN_PURGE_AFTER_DAYS * DAY_MS,
-          ),
+          frozen_reason: PENDING_GUARDIAN_FROZEN_REASON,
+          purge_after: null,
         },
       });
-      await tx.supervised_logins.update({
-        where: { user_id: teenId },
-        data: {
-          disabled_at: now,
-          disabled_reason: 'unlinked_purged',
-          disabled_by_user_id: null,
-        },
-      });
-      await tx.session.deleteMany({ where: { userId: teenId } });
       await this.deviceRevoker.revokeAllForDependent(
         tx,
         teenId,
@@ -384,12 +373,7 @@ export class PendingTeenCronService {
     });
     if (!frozen) return false;
 
-    // After the commit: best effort, the sessions are already gone.
-    try {
-      await this.tokenBlacklist.blacklistAllUserTokens(teenId, JWT_TTL_SECONDS);
-    } catch (error) {
-      this.logFailure('pending_teen_blacklist_failed', teenId, error);
-    }
+    // After the commit: the supervised state now carries the frozen marker.
     await this.actingForCache.bump(teenId);
     return true;
   }

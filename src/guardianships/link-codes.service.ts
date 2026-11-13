@@ -23,6 +23,7 @@ import {
   ACTIVE_USER_GUARDIAN,
   NOT_REVOKED,
   VISIBLE_DEPENDENT,
+  isDeadDependentProfile,
   countActiveGuardians,
   hasLiveAssignmentInSection,
   lockDependent,
@@ -186,7 +187,9 @@ export class LinkCodesService {
       select: {
         birthday: true,
         country_id: true,
-        dependent_profile: { select: { frozen_at: true, purged_at: true } },
+        dependent_profile: {
+          select: { frozen_at: true, frozen_reason: true, purged_at: true },
+        },
       },
     });
     if (!teen || !teen.birthday) {
@@ -198,10 +201,9 @@ export class LinkCodesService {
     if (ageToday(teen.birthday, policy.timeZone) >= policy.ageOfMajority) {
       throw principalScopeDenied('guardian_link:issue', 'user');
     }
-    if (
-      teen.dependent_profile?.frozen_at ||
-      teen.dependent_profile?.purged_at
-    ) {
+    // A teen frozen as `pending_guardian` (never auto-deleted) can still link a
+    // guardian: that link, once verified, is what thaws the account.
+    if (isDeadDependentProfile(teen.dependent_profile)) {
       throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
     }
 
@@ -517,14 +519,13 @@ export class LinkCodesService {
       select: {
         birthday: true,
         country_id: true,
-        dependent_profile: { select: { frozen_at: true, purged_at: true } },
+        dependent_profile: {
+          select: { frozen_at: true, frozen_reason: true, purged_at: true },
+        },
       },
     });
-    if (
-      !teen?.birthday ||
-      teen.dependent_profile?.frozen_at ||
-      teen.dependent_profile?.purged_at
-    ) {
+    // A `pending_guardian` freeze does not stop the link (it thaws on verify).
+    if (!teen?.birthday || isDeadDependentProfile(teen.dependent_profile)) {
       throw invalidCode();
     }
     const policy = await this.countryAgePolicy.getPolicy(teen.country_id);

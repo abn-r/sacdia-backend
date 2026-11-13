@@ -3,8 +3,13 @@ import { SupervisionStateService } from './supervision-state.service';
 describe('SupervisionStateService.describe', () => {
   const now = new Date('2026-10-20T12:00:00.000Z');
 
-  function build(rows: unknown[], pendingSince: Date | null) {
+  function build(
+    rows: unknown[],
+    pendingSince: Date | null,
+    profile: unknown = null,
+  ) {
     const prisma = {
+      dependent_profiles: { findUnique: jest.fn().mockResolvedValue(profile) },
       supervised_logins: {
         findUnique: jest
           .fn()
@@ -86,12 +91,48 @@ describe('SupervisionStateService.describe', () => {
     expect(view.pending_since).toBe('2026-10-10T12:00:00.000Z');
   });
 
+  describe('paused teen (pending_guardian freeze)', () => {
+    const frozenAt = new Date('2026-10-18T00:00:00.000Z');
+
+    it('exposes frozen_at and stops the days_left countdown', async () => {
+      const { service } = build([], new Date('2026-07-10T12:00:00.000Z'), {
+        frozen_at: frozenAt,
+        frozen_reason: 'pending_guardian',
+        purged_at: null,
+      });
+
+      const view = await service.describe('teen-1', 'pending_guardian', now);
+
+      expect(view.frozen_at).toBe('2026-10-18T00:00:00.000Z');
+      expect(view.days_left).toBeNull();
+    });
+
+    it('a freeze for another reason is not reported as paused', async () => {
+      const { service } = build([], null, {
+        frozen_at: frozenAt,
+        frozen_reason: null,
+        purged_at: null,
+      });
+
+      const view = await service.describe('teen-1', 'pending_guardian', now);
+
+      expect(view.frozen_at).toBeNull();
+    });
+
+    it('a teen that is not frozen has frozen_at null', async () => {
+      const { service } = build([], null);
+      const view = await service.describe('teen-1', 'active', now);
+      expect(view.frozen_at).toBeNull();
+    });
+  });
+
   describe('majority notice (Phase 4)', () => {
     function buildWithRelease(user: unknown, flagOn = true) {
       const prisma = {
         supervised_logins: {
           findUnique: jest.fn().mockResolvedValue({ pending_since: null }),
         },
+        dependent_profiles: { findUnique: jest.fn().mockResolvedValue(null) },
         guardianships: { findMany: jest.fn().mockResolvedValue([]) },
         users: { findUnique: jest.fn().mockResolvedValue(user) },
       };

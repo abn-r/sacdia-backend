@@ -13,9 +13,12 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ConsentGateService } from './consent-gate.service';
 import { verdictHasVerifyWork } from './consent-four-eyes';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
-import { FROZEN_PURGE_AFTER_DAYS } from '../guardianships/guardianships.constants';
 import {
-  VISIBLE_DEPENDENT,
+  FROZEN_PURGE_AFTER_DAYS,
+  PENDING_GUARDIAN_FROZEN_REASON,
+} from '../guardianships/guardianships.constants';
+import {
+  REACHABLE_FOR_GUARDIAN_LINK,
   lockDependentsAscending,
 } from '../guardianships/guardianship-queries';
 import {
@@ -65,7 +68,12 @@ const PENDING_REQUEST_INCLUDE = {
  */
 const LIVE_REQUESTER_WHERE = {
   users: {
-    OR: [{ dependent_profile: { is: null } }, VISIBLE_DEPENDENT],
+    OR: [
+      { dependent_profile: { is: null } },
+      // A teen frozen as `pending_guardian` (never auto-deleted) stays in the
+      // pending list: the director's consent verification is what thaws it.
+      REACHABLE_FOR_GUARDIAN_LINK,
+    ],
   },
 } satisfies Prisma.club_role_assignmentsWhereInput;
 
@@ -615,7 +623,9 @@ export class MembershipRequestsService {
    * (a minor a director registered that no family claimed: club custody only,
    * no guardian, nothing else live) the minor is frozen on the Phase 2 schedule
    * (`frozen_at = now`, `purge_after = now + 90 days`, devices revoked) and the
-   * purge cron removes it later. The dependent locks are taken BEFORE the bulk
+   * purge cron removes it later (a custody-only person that holds an account is
+   * a teen: it is frozen as `pending_guardian` instead, with no purge date, the
+   * ruling of 2026-11-13). The dependent locks are taken BEFORE the bulk
    * write: approve locks the dependent and then writes the assignment, so the
    * opposite order could deadlock.
    */
@@ -766,6 +776,17 @@ export class MembershipRequestsService {
       ).map(({ user_id }) => user_id),
     );
 
+    // A custody-only person that HOLDS an account is a teen: it is paused
+    // (`pending_guardian`, never auto-deleted), not put on the purge schedule.
+    const holdAccount = new Set(
+      (
+        await tx.account.findMany({
+          where: { userId: { in: dependentIds } },
+          select: { userId: true },
+        })
+      ).map(({ userId }) => userId),
+    );
+
     const frozen: string[] = [];
     for (const dependentId of dependentIds) {
       const rows = holders.filter(
@@ -777,12 +798,18 @@ export class MembershipRequestsService {
 
       await tx.dependent_profiles.updateMany({
         where: { user_id: dependentId, frozen_at: null, purged_at: null },
-        data: {
-          frozen_at: now,
-          purge_after: new Date(
-            now.getTime() + FROZEN_PURGE_AFTER_DAYS * 24 * 60 * 60 * 1000,
-          ),
-        },
+        data: holdAccount.has(dependentId)
+          ? {
+              frozen_at: now,
+              frozen_reason: PENDING_GUARDIAN_FROZEN_REASON,
+              purge_after: null,
+            }
+          : {
+              frozen_at: now,
+              purge_after: new Date(
+                now.getTime() + FROZEN_PURGE_AFTER_DAYS * 24 * 60 * 60 * 1000,
+              ),
+            },
       });
       await this.deviceRevoker.revokeAllForDependent(
         tx,

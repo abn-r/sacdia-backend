@@ -27,6 +27,7 @@ import type { SessionRequestContext } from '../better-auth/better-auth.service';
 import type { CreateDependentDto } from './dto';
 import {
   NOT_REVOKED,
+  REACHABLE_FOR_GUARDIAN_LINK,
   VISIBLE_DEPENDENT,
   displayName,
   loadClubMemberships,
@@ -387,7 +388,7 @@ export class GuardianshipsService {
         is_custodian: false,
         is_test_data: false,
         ...NOT_REVOKED,
-        dependent: VISIBLE_DEPENDENT,
+        dependent: REACHABLE_FOR_GUARDIAN_LINK,
       },
       orderBy: { created_at: 'asc' },
       select: SUMMARY_SELECT,
@@ -455,7 +456,11 @@ export class GuardianshipsService {
     };
   }
 
-  /** 404 for strangers, revoked guardians, custodians, frozen and purged. */
+  /**
+   * 404 for strangers, revoked guardians, custodians, frozen and purged. A teen
+   * frozen as `pending_guardian` stays reachable: its pending guardian links,
+   * uploads the signed form and waits for the verification that thaws it.
+   */
   private async findGuardianRow(
     guardianId: string,
     dependentId: string,
@@ -467,7 +472,7 @@ export class GuardianshipsService {
         is_custodian: false,
         is_test_data: false,
         ...NOT_REVOKED,
-        dependent: VISIBLE_DEPENDENT,
+        dependent: REACHABLE_FOR_GUARDIAN_LINK,
       },
       select: SUMMARY_SELECT,
     });

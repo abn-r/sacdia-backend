@@ -79,7 +79,24 @@ export const RELEASE_REMINDER_DAYS = [23, 29] as const;
 /** Why a dependent profile was frozen by the majority release (never auto-purged, ruling R6). */
 export const MAJORITY_RELEASE_FROZEN_REASON = 'majority_release';
 
-/** A frozen dependent is purged this long after the freeze. */
+/**
+ * Why a self-registered teen (13-17) was frozen at day 90 without a verified
+ * guardian. Never auto-purged and never carries `purge_after`: the teen thaws
+ * when a guardian is linked AND verified; only the person can ask for deletion.
+ */
+export const PENDING_GUARDIAN_FROZEN_REASON = 'pending_guardian';
+
+/**
+ * Freezes a person leaves by COMPLETING the majority release (accept the fresh
+ * terms + email): a released adult, and a teen paused as `pending_guardian` who
+ * reached the age of majority (no guardian is needed anymore).
+ */
+export const RELEASE_THAWABLE_FROZEN_REASONS = [
+  MAJORITY_RELEASE_FROZEN_REASON,
+  PENDING_GUARDIAN_FROZEN_REASON,
+] as const;
+
+/** A frozen dependent is purged this long after the freeze (club-custody minors only). */
 export const FROZEN_PURGE_AFTER_DAYS = 90;
 
 /** Statuses of `club_role_assignments` that count as "has a club membership". */

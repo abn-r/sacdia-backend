@@ -157,7 +157,7 @@ export const CRON_JOB_DEFINITIONS: readonly CronJobDefinition[] = [
     method: 'handleDaily',
     source: 'guardianships/pending-teen-cron.service.ts#handleDaily',
     description:
-      'Inicia el reloj de tutor de adolescentes pendientes, envía recordatorios y congela los vencidos.',
+      'Inicia el reloj de tutor de adolescentes pendientes, envía recordatorios y pone en pausa los vencidos (nunca los borra).',
   },
   {
     jobName: 'investiture-achievement-intent',
