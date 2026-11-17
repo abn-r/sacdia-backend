@@ -10,6 +10,8 @@ export interface AppExceptionPayload {
   statusCode: HttpStatus;
   namedArgs?: Record<string, unknown>;
   details?: unknown;
+  /** Client-safe structured data echoed in the response body (all environments). */
+  data?: unknown;
 }
 
 /**
@@ -32,12 +34,14 @@ export class AppException extends HttpException {
     statusCode: HttpStatus = HttpStatus.BAD_REQUEST,
     namedArgs?: Record<string, unknown>,
     details?: unknown,
+    data?: unknown,
   ) {
     const payload: AppExceptionPayload = {
       code,
       statusCode,
       ...(namedArgs !== undefined ? { namedArgs } : {}),
       ...(details !== undefined ? { details } : {}),
+      ...(data !== undefined ? { data } : {}),
     };
     // Pass code as the message string so Logger shows a meaningful entry
     // without revealing user-facing text (translation happens in the filter).
@@ -81,8 +85,13 @@ export class AppForbiddenException extends AppException {
 }
 
 export class AppConflictException extends AppException {
-  constructor(code: ErrorCode, namedArgs?: Record<string, unknown>) {
-    super(code, HttpStatus.CONFLICT, namedArgs);
+  /** `data` is echoed to the client in the error body (use for actionable conflicts). */
+  constructor(
+    code: ErrorCode,
+    namedArgs?: Record<string, unknown>,
+    data?: unknown,
+  ) {
+    super(code, HttpStatus.CONFLICT, namedArgs, undefined, data);
   }
 }
 

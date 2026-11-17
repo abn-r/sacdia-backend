@@ -36,11 +36,32 @@ export interface PendingInvestitureAuthorizationsItem {
   severity: PendingSeverity;
 }
 
+export interface PendingUninsuredMembersItem {
+  type: 'uninsured_members';
+  /** Section members and staff without insurance this ecclesiastical year. */
+  count: number;
+  /** YYYY-MM-DD: the cycle's purchase_deadline. */
+  due_date: string;
+  /** Calendar days from today (America/Mexico_City) to due_date; negative once past. */
+  days_left: number;
+  /** warning until the deadline (inclusive), urgent after. */
+  severity: PendingSeverity;
+}
+
+export interface PendingFreeInsuranceItem {
+  type: 'free_insurance';
+  /** Active coverages of the section whose holder left the club (reassignable). */
+  count: number;
+  severity: PendingSeverity;
+}
+
 export type DashboardPendingItem =
   | PendingMembershipRequestsItem
   | PendingEvidenceFolderItem
   | PendingMonthlyReportItem
-  | PendingInvestitureAuthorizationsItem;
+  | PendingInvestitureAuthorizationsItem
+  | PendingUninsuredMembersItem
+  | PendingFreeInsuranceItem;
 
 export interface DashboardPendingDto {
   section_id: number | null;

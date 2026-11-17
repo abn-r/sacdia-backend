@@ -112,7 +112,7 @@ export class FieldPaymentOrderPdfService {
       payment: model.payment_instructions,
       reference:
         `Referencia obligatoria en el pago: ${model.folio_reference}. ` +
-        'Sube tu comprobante en la app antes del vencimiento.',
+        'Sube tu recibo de pago en la app antes del vencimiento.',
       notices: [],
       legend: LEGEND,
     });

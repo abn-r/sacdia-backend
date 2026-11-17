@@ -14,7 +14,6 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 import {
   LOCAL_FIELD_ROLES,
   memberInLocalFieldWhere,
@@ -79,7 +78,6 @@ export class InsuranceService {
     private readonly fileStorage: FileStorageService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
-    private readonly fieldPaymentOrdersFlag: FieldPaymentOrdersFlagService,
     private readonly memberScope: MemberTerritoryScopeService,
   ) {}
 
@@ -372,150 +370,31 @@ export class InsuranceService {
     throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
 
-  async createInsurance(
-    memberId: string,
-    dto: InsuranceMutationInput,
-    file?: Express.Multer.File,
-    currentUserId?: string,
-  ) {
-    if (!currentUserId) {
-      throw new AppBadRequestException(
-        ErrorCode.INSURANCE_CURRENT_USER_REQUIRED,
-      );
-    }
-
-    const member = await this.loadMemberSnapshot(memberId);
-    if (!member) {
-      throw new AppNotFoundException(ErrorCode.INSURANCE_MEMBER_NOT_FOUND);
-    }
-
-    // Con órdenes de pago habilitadas en el LF del miembro, el alta manual
-    // legacy queda bloqueada: la cobertura nace del approve de la orden.
-    // El LF del miembro es el de su fila `users`; si es nulo (p. ej. un director
-    // sin campo en su perfil), el de los clubes donde tiene un rol vigente.
-    const memberLocalFieldIds =
-      await this.memberScope.resolveMemberLocalFieldIds(memberId);
-    for (const memberLocalFieldId of memberLocalFieldIds) {
-      if (
-        await this.fieldPaymentOrdersFlag.isEnabledForLocalField(
-          memberLocalFieldId,
-        )
-      ) {
-        throw new AppConflictException(
-          ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
-        );
-      }
-    }
-
-    const fileData = await this.uploadEvidenceFile(memberId, file);
-    const insuranceType = this.normalizeInsuranceType(dto.insurance_type);
-    if (!insuranceType) {
-      throw new AppBadRequestException(ErrorCode.INSURANCE_TYPE_REQUIRED);
-    }
-
-    await this.db.member_insurances.create({
-      data: {
-        user_id: memberId,
-        insurance_type: insuranceType,
-        policy_number: this.normalizeNullableString(dto.policy_number),
-        provider: this.normalizeNullableString(dto.provider),
-        start_date: this.parseDateOrThrow(dto.start_date, 'start_date'),
-        end_date: this.parseDateOrThrow(dto.end_date, 'end_date'),
-        coverage_amount: this.parseCoverageAmount(dto.coverage_amount),
-        active: dto.active === undefined ? true : this.parseBoolean(dto.active),
-        created_by_id: currentUserId,
-        ...(fileData
-          ? {
-              evidence_file_url: fileData.url,
-              evidence_file_name: fileData.name,
-            }
-          : {}),
-      },
-    });
-
-    return this.mapMemberInsuranceDetail(
-      member,
-      await this.loadLatestActiveInsurance(memberId),
+  /**
+   * Retired: insurance is annual and only comes from an approved field payment
+   * order. Manual registration (policy number, provider, free dates) is closed
+   * for everyone.
+   */
+  createInsurance(
+    _memberId: string,
+    _dto: InsuranceMutationInput,
+    _file?: Express.Multer.File,
+    _currentUserId?: string,
+  ): Promise<never> {
+    return Promise.reject(
+      new AppConflictException(ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED),
     );
   }
 
-  async updateInsurance(
-    insuranceId: number,
-    dto: InsuranceMutationInput,
-    file?: Express.Multer.File,
-    currentUserId?: string,
-  ) {
-    if (!currentUserId) {
-      throw new AppBadRequestException(
-        ErrorCode.INSURANCE_CURRENT_USER_REQUIRED,
-      );
-    }
-
-    const existing = await this.db.member_insurances.findUnique({
-      where: { insurance_id: insuranceId },
-      select: {
-        insurance_id: true,
-        user_id: true,
-      },
-    });
-
-    if (!existing) {
-      throw new AppNotFoundException(ErrorCode.INSURANCE_NOT_FOUND);
-    }
-
-    const fileData = await this.uploadEvidenceFile(existing.user_id, file);
-    const updateData: Record<string, any> = {
-      modified_by_id: currentUserId,
-    };
-
-    if (dto.insurance_type !== undefined) {
-      updateData.insurance_type = this.normalizeInsuranceType(
-        dto.insurance_type,
-      );
-    }
-    if (dto.policy_number !== undefined) {
-      updateData.policy_number = this.normalizeNullableString(
-        dto.policy_number,
-      );
-    }
-    if (dto.provider !== undefined) {
-      updateData.provider = this.normalizeNullableString(dto.provider);
-    }
-    if (dto.start_date !== undefined) {
-      updateData.start_date = this.parseDateOrThrow(
-        dto.start_date,
-        'start_date',
-      );
-    }
-    if (dto.end_date !== undefined) {
-      updateData.end_date = this.parseDateOrThrow(dto.end_date, 'end_date');
-    }
-    if (dto.coverage_amount !== undefined) {
-      updateData.coverage_amount = this.parseCoverageAmount(
-        dto.coverage_amount,
-      );
-    }
-    if (dto.active !== undefined) {
-      updateData.active = this.parseBoolean(dto.active);
-    }
-    if (fileData) {
-      updateData.evidence_file_url = fileData.url;
-      updateData.evidence_file_name = fileData.name;
-    }
-
-    await this.db.member_insurances.update({
-      where: { insurance_id: insuranceId },
-      data: updateData,
-    });
-
-    const member = await this.loadMemberSnapshot(existing.user_id);
-    if (!member) {
-      throw new AppNotFoundException(ErrorCode.INSURANCE_MEMBER_NOT_FOUND);
-    }
-
-    return this.mapMemberInsuranceDetail(
-      member,
-      await this.loadLatestActiveInsurance(existing.user_id),
+  /** Retired together with {@link createInsurance}. */
+  updateInsurance(
+    _insuranceId: number,
+    _dto: InsuranceMutationInput,
+    _file?: Express.Multer.File,
+    _currentUserId?: string,
+  ): Promise<never> {
+    return Promise.reject(
+      new AppConflictException(ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED),
     );
   }
 

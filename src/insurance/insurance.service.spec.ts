@@ -6,7 +6,6 @@ import { MemberTerritoryScopeService } from '../common/authorization/member-terr
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
-import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { InsuranceService } from './insurance.service';
 
@@ -43,10 +42,6 @@ describe('InsuranceService', () => {
     },
   };
 
-  const mockFieldPaymentOrdersFlag = {
-    isEnabledForLocalField: jest.fn().mockResolvedValue(false),
-  };
-
   const EFFECTIVE = effectiveAssignmentAt(new Date('2026-10-28T12:00:00.000Z'));
   const mockMemberScope = {
     effectiveAssignmentForLocalField: jest.fn(async () => EFFECTIVE),
@@ -79,16 +74,11 @@ describe('InsuranceService', () => {
           provide: CoordinationService,
           useValue: mockCoordinationService,
         },
-        {
-          provide: FieldPaymentOrdersFlagService,
-          useValue: mockFieldPaymentOrdersFlag,
-        },
         { provide: MemberTerritoryScopeService, useValue: mockMemberScope },
       ],
     }).compile();
 
     service = module.get(InsuranceService);
-    mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValue(false);
     mockMemberScope.resolveMemberLocalFieldIds.mockResolvedValue([]);
 
     jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
@@ -316,15 +306,7 @@ describe('InsuranceService', () => {
     });
   });
 
-  it('blocks legacy insurance creation when the member LF has payment orders enabled', async () => {
-    mockPrismaService.users.findUnique.mockResolvedValue({
-      user_id: 'member-9',
-      local_field_id: 7,
-      enrollments: [],
-    });
-    mockMemberScope.resolveMemberLocalFieldIds.mockResolvedValue([7]);
-    mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValue(true);
-
+  it('always rejects manual insurance creation (legacy retired), regardless of the flag', async () => {
     await expect(
       service.createInsurance(
         'member-9',
@@ -336,204 +318,21 @@ describe('InsuranceService', () => {
       code: ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
     });
     expect(mockPrismaService.member_insurances.create).not.toHaveBeenCalled();
+    expect(mockFileStorageService.upload).not.toHaveBeenCalled();
   });
 
-  it('blocks legacy creation when ANY resolved LF of the member (own row or effective club role) has payment orders enabled', async () => {
-    mockPrismaService.users.findUnique.mockResolvedValue({
-      user_id: 'member-10',
-      local_field_id: null,
-      enrollments: [],
-    });
-    mockMemberScope.resolveMemberLocalFieldIds.mockResolvedValue([3, 7]);
-    mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockImplementation(
-      async (lf: number) => lf === 7,
-    );
-
+  it('always rejects manual insurance updates (legacy retired)', async () => {
     await expect(
-      service.createInsurance(
-        'member-10',
-        { insurance_type: 'GENERAL_ACTIVITIES' },
+      service.updateInsurance(
+        42,
+        { policy_number: 'POL-1' },
         undefined,
         'admin-1',
       ),
     ).rejects.toMatchObject({
       code: ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
     });
-    expect(
-      mockFieldPaymentOrdersFlag.isEnabledForLocalField,
-    ).toHaveBeenCalledWith(7);
-    expect(mockPrismaService.member_insurances.create).not.toHaveBeenCalled();
-  });
-
-  it('creates insurance with evidence upload and stores audit fields', async () => {
-    mockPrismaService.users.findUnique.mockResolvedValue({
-      user_id: 'member-3',
-      name: 'Luis',
-      paternal_last_name: 'Ramírez',
-      maternal_last_name: 'Sosa',
-      user_image: null,
-      enrollments: [],
-    });
-    mockPrismaService.member_insurances.create.mockResolvedValue({
-      insurance_id: 12,
-    });
-    mockPrismaService.member_insurances.findFirst.mockResolvedValue({
-      insurance_id: 12,
-      user_id: 'member-3',
-      insurance_type: 'CAMPOREE',
-      policy_number: 'POL-123',
-      provider: 'Seguros SACDIA',
-      start_date: new Date('2025-02-01'),
-      end_date: new Date('2025-12-31'),
-      coverage_amount: 700,
-      active: true,
-      evidence_file_url: 'https://cdn.example.com/evidence/member-3.pdf',
-      evidence_file_name: 'evidence.pdf',
-      created_at: new Date('2025-02-01T12:00:00.000Z'),
-      modified_at: new Date('2025-02-01T12:00:00.000Z'),
-      created_by: { name: 'Admin User' },
-      modified_by: null,
-    });
-    mockFileStorageService.upload.mockResolvedValue({
-      key: 'insurance-member-3-1700000000000.pdf',
-      url: 'https://cdn.example.com/evidence/member-3.pdf',
-    });
-
-    const resultPromise = service.createInsurance(
-      'member-3',
-      {
-        insurance_type: 'CAMPOREE',
-        start_date: '2025-02-01',
-        end_date: '2025-12-31',
-        policy_number: 'POL-123',
-        provider: 'Seguros SACDIA',
-        coverage_amount: '700',
-      },
-      {
-        originalname: 'evidence.pdf',
-        mimetype: 'application/pdf',
-        buffer: Buffer.from('pdf'),
-      } as Express.Multer.File,
-      'admin-1',
-    );
-
-    await expect(resultPromise).resolves.toEqual(
-      expect.objectContaining({
-        user_id: 'member-3',
-        user: expect.objectContaining({
-          user_id: 'member-3',
-          name: 'Luis',
-        }),
-        insurance: expect.objectContaining({
-          insurance_id: 12,
-          evidence_file_name: 'evidence.pdf',
-        }),
-      }),
-    );
-
-    expect(mockFileStorageService.upload).toHaveBeenCalledWith(
-      'INSURANCE_EVIDENCE',
-      'insurance-member-3-1700000000000.pdf',
-      expect.any(Buffer),
-      { contentType: 'application/pdf' },
-    );
-    expect(mockPrismaService.member_insurances.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          user_id: 'member-3',
-          created_by_id: 'admin-1',
-          evidence_file_url: 'https://cdn.example.com/evidence/member-3.pdf',
-          evidence_file_name: 'evidence.pdf',
-        }),
-      }),
-    );
-  });
-
-  it('updates insurance with evidence upload and stores modified_by_id', async () => {
-    mockPrismaService.member_insurances.findUnique.mockResolvedValue({
-      insurance_id: 44,
-      user_id: 'member-4',
-      active: true,
-    });
-    mockPrismaService.member_insurances.update.mockResolvedValue({
-      insurance_id: 44,
-      user_id: 'member-4',
-    });
-    mockPrismaService.users.findUnique.mockResolvedValue({
-      user_id: 'member-4',
-      name: 'Sara',
-      paternal_last_name: 'Mora',
-      maternal_last_name: 'Vega',
-      user_image: null,
-      enrollments: [],
-    });
-    mockPrismaService.member_insurances.findFirst.mockResolvedValue({
-      insurance_id: 44,
-      user_id: 'member-4',
-      insurance_type: 'HIGH_RISK',
-      policy_number: 'POL-999',
-      provider: 'Seguros SACDIA',
-      start_date: new Date('2025-03-01'),
-      end_date: new Date('2025-12-31'),
-      coverage_amount: 900,
-      active: true,
-      evidence_file_url: 'https://cdn.example.com/evidence/member-4.pdf',
-      evidence_file_name: 'updated.pdf',
-      created_at: new Date('2025-03-01T12:00:00.000Z'),
-      modified_at: new Date('2025-03-02T12:00:00.000Z'),
-      created_by: { name: 'Admin User' },
-      modified_by: { name: 'Editor User' },
-    });
-    mockFileStorageService.upload.mockResolvedValue({
-      key: 'insurance-member-4-1700000000000.pdf',
-      url: 'https://cdn.example.com/evidence/member-4.pdf',
-    });
-
-    const resultPromise = service.updateInsurance(
-      44,
-      {
-        provider: 'Seguros SACDIA Plus',
-        coverage_amount: '900',
-      },
-      {
-        originalname: 'updated.pdf',
-        mimetype: 'application/pdf',
-        buffer: Buffer.from('pdf'),
-      } as Express.Multer.File,
-      'editor-1',
-    );
-
-    await expect(resultPromise).resolves.toEqual(
-      expect.objectContaining({
-        user_id: 'member-4',
-        user: expect.objectContaining({
-          user_id: 'member-4',
-          name: 'Sara',
-        }),
-        insurance: expect.objectContaining({
-          insurance_id: 44,
-          created_by_name: 'Admin User',
-          modified_by_name: 'Editor User',
-        }),
-      }),
-    );
-
-    expect(mockFileStorageService.upload).toHaveBeenCalledWith(
-      'INSURANCE_EVIDENCE',
-      'insurance-member-4-1700000000000.pdf',
-      expect.any(Buffer),
-      { contentType: 'application/pdf' },
-    );
-    expect(mockPrismaService.member_insurances.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { insurance_id: 44 },
-        data: expect.objectContaining({
-          modified_by_id: 'editor-1',
-          evidence_file_url: 'https://cdn.example.com/evidence/member-4.pdf',
-          evidence_file_name: 'updated.pdf',
-        }),
-      }),
-    );
+    expect(mockPrismaService.member_insurances.update).not.toHaveBeenCalled();
   });
 
   it('throws when member does not exist', async () => {

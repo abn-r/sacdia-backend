@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { I18nService } from 'nestjs-i18n';
 import { HttpExceptionFilter } from './http-exception.filter';
-import { AppException } from '../errors/app.exception';
+import { AppConflictException, AppException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 
 /**
@@ -435,5 +435,29 @@ describe('HttpExceptionFilter — Retry-After for throttled domain errors', () =
       ),
     );
     expect(json.mock.calls[0][0].details).toBeUndefined();
+  });
+
+  it('echoes client-safe `data` of conflict exceptions in the body, in every environment', () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const { json } = run(
+        new AppConflictException(
+          ErrorCode.FIELD_PAYMENT_ORDER_DUPLICATE_BENEFICIARY,
+          { user_ids: ['u1'] },
+          { conflicts: [{ user_id: 'u1', folio: 'ORD1' }] },
+        ),
+      );
+      const body = json.mock.calls[0][0];
+      expect(body.statusCode).toBe(409);
+      expect(body.code).toBe(
+        ErrorCode.FIELD_PAYMENT_ORDER_DUPLICATE_BENEFICIARY,
+      );
+      expect(body.data).toEqual({
+        conflicts: [{ user_id: 'u1', folio: 'ORD1' }],
+      });
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
   });
 });

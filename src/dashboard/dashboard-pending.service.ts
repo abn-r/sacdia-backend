@@ -12,6 +12,10 @@ import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { CLOCK, type Clock } from '../common/clock/clock';
 import {
+  InsuranceCoverageService,
+  type SectionInsuranceOverview,
+} from '../field-payment-orders/insurance-coverage.service';
+import {
   calendarDateInZone,
   resolveMonthlyReportDue,
 } from './dashboard-pending.period';
@@ -20,16 +24,19 @@ import type {
   DashboardPendingItem,
   MonthlyReportPendingStatus,
   PendingEvidenceFolderItem,
+  PendingFreeInsuranceItem,
   PendingInvestitureAuthorizationsItem,
   PendingMembershipRequestsItem,
   PendingMonthlyReportItem,
   PendingSeverity,
+  PendingUninsuredMembersItem,
 } from './dashboard-pending.types';
 
 const APPROVE_PERMISSION = 'club_members:approve';
 const CONSENT_VERIFY_PERMISSION = 'consent:verify';
 const EVIDENCE_READ_PERMISSION = 'evidence_folders:read';
 const REPORT_SUBMIT_PERMISSION = 'reports:submit';
+const ORDER_ISSUE_PERMISSION = 'field-payment-orders:create';
 
 /** Same key, default and bounds as MonthlyReportsService / ReportsComplianceService. */
 const DUE_DAY_CONFIG_KEY = 'reports.auto_generate_day';
@@ -70,6 +77,7 @@ export class DashboardPendingService {
     private readonly catalogs: CatalogsService,
     private readonly membershipRequests: MembershipRequestsService,
     private readonly investitureRequests: InvestitureAuthorizationRequestService,
+    private readonly insuranceCoverage: InsuranceCoverageService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -94,6 +102,13 @@ export class DashboardPendingService {
       return enrollment;
     };
 
+    // uninsured_members and free_insurance share one overview read.
+    let overview: Promise<SectionInsuranceOverview> | null = null;
+    const loadOverview = (): Promise<SectionInsuranceOverview> => {
+      overview ??= this.insuranceCoverage.getOverview(section!.sectionId);
+      return overview;
+    };
+
     const tasks: Array<[string, () => Promise<DashboardPendingItem | null>]> = [
       [
         'membership_requests',
@@ -108,6 +123,11 @@ export class DashboardPendingService {
         'investiture_authorizations',
         () => this.investitureItem(userId, authorization),
       ],
+      [
+        'uninsured_members',
+        () => this.uninsuredMembersItem(section, now, loadOverview),
+      ],
+      ['free_insurance', () => this.freeInsuranceItem(section, loadOverview)],
     ];
 
     const settled = await Promise.allSettled(tasks.map(([, run]) => run()));
@@ -386,6 +406,49 @@ export class DashboardPendingService {
     );
     return count > 0
       ? { type: 'investiture_authorizations', count, severity: 'info' }
+      : null;
+  }
+
+  // ----------------------------------------
+  // uninsured_members / free_insurance (annual insurance model)
+  // ----------------------------------------
+
+  private async uninsuredMembersItem(
+    section: ActiveSection | null,
+    now: Date,
+    loadOverview: () => Promise<SectionInsuranceOverview>,
+  ): Promise<PendingUninsuredMembersItem | null> {
+    if (!section?.permissions.has(ORDER_ISSUE_PERMISSION)) return null;
+    const overview = await loadOverview();
+    // Only meaningful when the LF has an active cycle for this year and club type.
+    if (!overview.cycle || overview.counts.uninsured === 0) return null;
+
+    const dueDate = overview.cycle.purchase_deadline;
+    const today = calendarDateInZone(now);
+    const [dueYear, dueMonth, dueDay] = dueDate.split('-').map(Number);
+    const daysLeft = Math.round(
+      (Date.UTC(dueYear, dueMonth - 1, dueDay) -
+        Date.UTC(today.year, today.month - 1, today.day)) /
+        86_400_000,
+    );
+    return {
+      type: 'uninsured_members',
+      count: overview.counts.uninsured,
+      due_date: dueDate,
+      days_left: daysLeft,
+      // Deadline day itself is still on time (warning); urgent only after it.
+      severity: daysLeft >= 0 ? 'warning' : 'urgent',
+    };
+  }
+
+  private async freeInsuranceItem(
+    section: ActiveSection | null,
+    loadOverview: () => Promise<SectionInsuranceOverview>,
+  ): Promise<PendingFreeInsuranceItem | null> {
+    if (!section?.permissions.has(ORDER_ISSUE_PERMISSION)) return null;
+    const { free_coverages_count: count } = await loadOverview();
+    return count > 0
+      ? { type: 'free_insurance', count, severity: 'info' }
       : null;
   }
 

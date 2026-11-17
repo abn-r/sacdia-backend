@@ -6,11 +6,9 @@ import {
   AppForbiddenException,
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
-import {
-  classifyInsurancePurchase,
-  resolveInsuranceValidity,
-} from '../../insurance/domain/insurance-policy';
+import { classifyInsurancePurchase } from '../../insurance/domain/insurance-policy';
 import { PrismaService } from '../../prisma/prisma.service';
+import { InsuranceCoverageService } from '../insurance-coverage.service';
 import type { OrderActor } from '../order-actor';
 import type {
   OrderForFulfillment,
@@ -26,12 +24,22 @@ export interface InsuranceOrderRequest {
 /**
  * Insurance purpose port (plan base Tasks 2.1–2.2, decisión 11).
  *
- * prepareOrder: validates cycle/club_type/membership/duplicates and snapshots
- * the unit cost in centavos. fulfill (Task 2.2) materializes coverage.
+ * Annual model: coverage lasts until the end of the cycle's ecclesiastical
+ * year, a person holds one insurance per year (any LF/club/club type) and can
+ * be in only one live-or-paid order per year. `purpose_ref_id` of INSURANCE
+ * lines is the ecclesiastical year id, so the existing partial unique index
+ * `uq_field_payment_order_lines_active_beneficiary` enforces the second rule
+ * without a migration.
+ *
+ * prepareOrder: validates cycle/club_type/eligibility/conflicts and snapshots
+ * the unit cost in centavos. fulfill materializes coverage.
  */
 @Injectable()
 export class InsuranceFulfillmentService implements PurposeFulfillment {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly coverage: InsuranceCoverageService,
+  ) {}
 
   async prepareOrder(
     rawDto: unknown,
@@ -45,12 +53,18 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
 
     const cycle = await this.prisma.insurance_cycle_configs.findUnique({
       where: { insurance_cycle_config_id: dto.insurance_cycle_config_id },
-      include: { product: true },
+      include: { product: true, ecclesiastical_year: true },
     });
     if (!cycle?.active || !cycle.product?.active) {
       throw new AppBadRequestException(
         ErrorCode.FIELD_PAYMENT_ORDER_CYCLE_INVALID,
         { reason: 'cycle_not_found_or_inactive' },
+      );
+    }
+    if (cycle.ecclesiastical_year.end_date < this.coverage.today()) {
+      throw new AppBadRequestException(
+        ErrorCode.FIELD_PAYMENT_ORDER_CYCLE_INVALID,
+        { reason: 'cycle_year_ended' },
       );
     }
 
@@ -83,22 +97,22 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
       );
     }
 
-    await this.assertSectionMembership(
+    await this.coverage.assertSectionPeople(
       this.prisma,
       section.club_section_id,
       dto.beneficiary_user_ids,
     );
-    await this.assertNotAlreadyCovered(
-      this.prisma,
-      dto.insurance_cycle_config_id,
-      dto.beneficiary_user_ids,
-    );
+    await this.coverage.assertCanBeInsured(this.prisma, {
+      yearId: cycle.ecclesiastical_year_id,
+      userIds: dto.beneficiary_user_ids,
+    });
 
     return {
       local_field_id: localFieldId,
       club_id: sectionRow.clubs?.club_id ?? section.club_id,
       club_section_id: section.club_section_id,
-      purpose_ref_id: cycle.insurance_cycle_config_id,
+      purpose_ref_id: cycle.ecclesiastical_year_id,
+      insurance_cycle_config_id: cycle.insurance_cycle_config_id,
       unit_cost_centavos: unitCostCentavos,
       currency: 'MXN',
       concept: cycle.product.name,
@@ -125,7 +139,7 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
     }
     const cycle = await tx.insurance_cycle_configs.findUnique({
       where: { insurance_cycle_config_id: order.insurance_cycle_config_id },
-      include: { product: true },
+      include: { product: true, ecclesiastical_year: true },
     });
     if (!cycle?.active || !cycle.product?.active) {
       throw new AppConflictException(
@@ -133,31 +147,29 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
         { reason: 'cycle_not_found_or_inactive' },
       );
     }
-    if (cycle.product.validity_mode !== 'FIXED_MONTHS') {
-      throw new AppConflictException(
-        ErrorCode.FIELD_PAYMENT_ORDER_CYCLE_INVALID,
-        { reason: 'unsupported_validity_mode' },
-      );
-    }
 
     const userIds = order.lines.map((line) => line.beneficiary_user_id);
-    await this.assertSectionMembership(tx, order.club_section_id, userIds);
-    await this.assertNotAlreadyCovered(
-      tx,
-      order.insurance_cycle_config_id,
+    await this.coverage.assertSectionPeople(tx, order.club_section_id, userIds);
+    // Re-check at approve: coverage may have been paid elsewhere meanwhile.
+    // The order being approved is excluded from the live-order check.
+    await this.coverage.assertCanBeInsured(tx, {
+      yearId: cycle.ecclesiastical_year_id,
       userIds,
-    );
+      excludeOrderId: order.field_payment_order_id,
+    });
 
     const now = new Date();
     const classification = classifyInsurancePurchase(
       now,
       new Date(cycle.purchase_deadline),
     );
-    const validity = resolveInsuranceValidity({
-      validityMode: 'FIXED_MONTHS',
-      startsAt: now,
-      durationMonths: cycle.product.default_duration_months ?? 12,
-    });
+    // Annual validity: from approval (or the year start, if later) to the end
+    // of the cycle's ecclesiastical year. DATE columns, so end-of-day inclusive.
+    const yearStart = cycle.ecclesiastical_year.start_date;
+    const validity = {
+      startsAt: yearStart > now ? yearStart : now,
+      endsAt: cycle.ecclesiastical_year.end_date,
+    };
 
     const purchase = await tx.insurance_purchases.create({
       data: {
@@ -261,7 +273,7 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
       }),
     });
 
-    await this.upsertBridges(tx, {
+    await this.coverage.upsertBridges(tx, {
       userIds,
       providerName: cycle.product.name,
       folioReference: order.folio_reference,
@@ -287,125 +299,6 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
         },
         data: { insurance_assignment_id: assignment.insurance_assignment_id },
       });
-    }
-  }
-
-  /**
-   * Legacy bridge: camporees (y otras lecturas) siguen consultando
-   * `member_insurances`; extendemos la vigencia si ya existe una póliza
-   * activa del mismo tipo, o creamos el registro puente. Un roundtrip
-   * findMany + createMany/updateMany en vez de N findFirst.
-   */
-  private async upsertBridges(
-    tx: Prisma.TransactionClient,
-    input: {
-      userIds: string[];
-      providerName: string;
-      folioReference: string;
-      validFrom: Date;
-      validUntil: Date;
-      actorId: string;
-    },
-  ): Promise<void> {
-    const existing = await tx.member_insurances.findMany({
-      where: {
-        user_id: { in: input.userIds },
-        insurance_type: 'GENERAL_ACTIVITIES',
-        active: true,
-        end_date: { gte: input.validFrom },
-      },
-      orderBy: { end_date: 'desc' },
-    });
-    const latestByUser = new Map<string, (typeof existing)[number]>();
-    for (const row of existing) {
-      if (!latestByUser.has(row.user_id)) {
-        latestByUser.set(row.user_id, row);
-      }
-    }
-
-    const toExtendIds: number[] = [];
-    const toCreate: string[] = [];
-    for (const userId of input.userIds) {
-      const row = latestByUser.get(userId);
-      if (!row) {
-        toCreate.push(userId);
-        continue;
-      }
-      if (row.end_date < input.validUntil) {
-        toExtendIds.push(row.insurance_id);
-      }
-    }
-
-    if (toExtendIds.length > 0) {
-      await tx.member_insurances.updateMany({
-        where: { insurance_id: { in: toExtendIds } },
-        data: {
-          end_date: input.validUntil,
-          modified_by_id: input.actorId,
-        },
-      });
-    }
-    if (toCreate.length > 0) {
-      await tx.member_insurances.createMany({
-        data: toCreate.map((userId) => ({
-          user_id: userId,
-          insurance_type: 'GENERAL_ACTIVITIES',
-          provider: input.providerName,
-          policy_number: input.folioReference,
-          start_date: input.validFrom,
-          end_date: input.validUntil,
-          active: true,
-          created_by_id: input.actorId,
-          modified_by_id: input.actorId,
-        })),
-      });
-    }
-  }
-
-  private async assertSectionMembership(
-    db: Pick<PrismaService, 'club_role_assignments'>,
-    clubSectionId: number,
-    userIds: string[],
-  ): Promise<void> {
-    const memberships = await db.club_role_assignments.findMany({
-      where: {
-        user_id: { in: userIds },
-        club_section_id: clubSectionId,
-        active: true,
-        status: 'active',
-      },
-      select: { user_id: true },
-    });
-    const memberSet = new Set(memberships.map((row) => row.user_id));
-    const missing = userIds.filter((userId) => !memberSet.has(userId));
-    if (missing.length > 0) {
-      throw new AppBadRequestException(
-        ErrorCode.FIELD_PAYMENT_ORDER_ELIGIBILITY_FAILED,
-        { reason: 'not_section_members', user_ids: missing },
-      );
-    }
-  }
-
-  private async assertNotAlreadyCovered(
-    db: Pick<PrismaService, 'insurance_assignments'>,
-    cycleConfigId: number,
-    userIds: string[],
-  ): Promise<void> {
-    const covered = await db.insurance_assignments.findMany({
-      where: {
-        user_id: { in: userIds },
-        status: 'ACTIVE',
-        coverage_slot: {
-          purchase: { insurance_cycle_config_id: cycleConfigId },
-        },
-      },
-      select: { user_id: true },
-    });
-    if (covered.length > 0) {
-      throw new AppConflictException(
-        ErrorCode.FIELD_PAYMENT_ORDER_DUPLICATE_BENEFICIARY,
-        { user_ids: covered.map((row) => row.user_id) },
-      );
     }
   }
 }

@@ -6,7 +6,6 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { classifyInsurancePurchase } from './domain/insurance-policy';
 import type {
@@ -28,106 +27,25 @@ export class InsurancePurchasesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly evidence: InsuranceEvidenceService,
-    private readonly fieldPaymentOrdersFlag: FieldPaymentOrdersFlagService,
   ) {}
 
   private get db(): any {
     return this.prisma as any;
   }
 
-  async submit(
-    sectionId: number,
-    dto: SubmitInsurancePurchaseDto,
-    file: Express.Multer.File | undefined,
-    actor: InsurancePurchaseActor,
-  ) {
-    this.assertSubmitScope(sectionId, actor);
-    this.assertPositiveInput(dto);
-    const section = await this.db.club_sections.findUnique({
-      where: { club_section_id: sectionId },
-      include: {
-        clubs: {
-          select: { club_id: true, local_field_id: true, club_type_id: true },
-        },
-      },
-    });
-    if (!section)
-      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
-    const club = section.clubs ?? section.club;
-    // Con órdenes de pago habilitadas en el LF, el submit manual de purchases
-    // por cantidad queda bloqueado: la compra nace del approve de la orden.
-    if (
-      typeof club?.local_field_id === 'number' &&
-      (await this.fieldPaymentOrdersFlag.isEnabledForLocalField(
-        club.local_field_id,
-      ))
-    ) {
-      throw new AppConflictException(
-        ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
-      );
-    }
-    const cycle = await this.db.insurance_cycle_configs.findUnique({
-      where: { insurance_cycle_config_id: dto.insurance_cycle_config_id },
-      select: {
-        insurance_cycle_config_id: true,
-        local_field_id: true,
-        club_type_id: true,
-        active: true,
-      },
-    });
-    if (!cycle)
-      throw new AppNotFoundException(
-        ErrorCode.INSURANCE_CYCLE_CONFIG_NOT_FOUND,
-      );
-    if (!cycle.active || cycle.local_field_id !== club.local_field_id) {
-      throw new AppForbiddenException(
-        ErrorCode.INSURANCE_CYCLE_OUTSIDE_LOCAL_FIELD,
-      );
-    }
-    if (cycle.club_type_id !== club.club_type_id) {
-      throw new AppBadRequestException(
-        ErrorCode.INSURANCE_CYCLE_CLUB_TYPE_MISMATCH,
-      );
-    }
-    if (!actor.globalAccess && actor.localFieldId !== club.local_field_id) {
-      throw new AppForbiddenException(
-        ErrorCode.INSURANCE_PURCHASE_SECTION_FORBIDDEN,
-      );
-    }
-
-    const proof = await this.evidence.uploadPurchaseProof(
-      'pending',
-      file,
-      actor,
+  /**
+   * Retired: insurance is annual and only comes from an approved field payment
+   * order (POST insurance/payment-orders); quantity purchases are closed.
+   */
+  submit(
+    _sectionId: number,
+    _dto: SubmitInsurancePurchaseDto,
+    _file: Express.Multer.File | undefined,
+    _actor: InsurancePurchaseActor,
+  ): Promise<never> {
+    return Promise.reject(
+      new AppConflictException(ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED),
     );
-    try {
-      return await this.db.$transaction(async (tx: any) => {
-        const purchase = await tx.insurance_purchases.create({
-          data: {
-            insurance_cycle_config_id: cycle.insurance_cycle_config_id,
-            owner_club_id: club.club_id,
-            purchasing_section_id: sectionId,
-            quantity: dto.quantity,
-            total_amount: dto.total_amount,
-            external_reference: dto.external_reference.trim(),
-            receipt_date: this.parseDateOnly(dto.receipt_date),
-            submitted_by_id: actor.userId,
-            created_by_id: actor.userId,
-            modified_by_id: actor.userId,
-          },
-        });
-        await this.evidence.persistPurchaseProof(
-          tx,
-          purchase.insurance_purchase_id,
-          proof,
-          actor,
-        );
-        return purchase;
-      });
-    } catch (error) {
-      await this.deleteProofSafely(proof.fileKey);
-      throw error;
-    }
   }
 
   async listForSection(sectionId: number, actor: InsurancePurchaseActor) {

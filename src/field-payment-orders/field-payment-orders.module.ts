@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { FieldPaymentOrdersController } from './field-payment-orders.controller';
 import { FieldPaymentOrdersService } from './field-payment-orders.service';
+import { InsuranceCoverageController } from './insurance-coverage.controller';
+import { InsuranceCoverageService } from './insurance-coverage.service';
 import { InsuranceReassignmentsController } from './insurance-reassignments.controller';
 import { InsuranceReassignmentsService } from './insurance-reassignments.service';
 import { FieldPaymentOrderConfigsService } from './field-payment-order-configs.service';
@@ -16,10 +18,15 @@ import {
 } from './fulfillment/ports';
 
 @Module({
-  controllers: [FieldPaymentOrdersController, InsuranceReassignmentsController],
+  controllers: [
+    FieldPaymentOrdersController,
+    InsuranceReassignmentsController,
+    InsuranceCoverageController,
+  ],
   providers: [
     FieldPaymentOrdersService,
     InsuranceReassignmentsService,
+    InsuranceCoverageService,
     FieldPaymentOrderConfigsService,
     FieldPaymentOrdersFlagService,
     FieldPaymentFolioService,
@@ -36,6 +43,6 @@ import {
       useExisting: CamporeeFulfillmentService,
     },
   ],
-  exports: [FieldPaymentOrdersFlagService],
+  exports: [FieldPaymentOrdersFlagService, InsuranceCoverageService],
 })
 export class FieldPaymentOrdersModule {}
