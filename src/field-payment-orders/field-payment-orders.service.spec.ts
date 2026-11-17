@@ -41,7 +41,9 @@ function preparedOrder(overrides: Partial<PreparedOrder> = {}): PreparedOrder {
     local_field_id: 7,
     club_id: 5,
     club_section_id: 11,
-    purpose_ref_id: 33,
+    // INSURANCE: ecclesiastical year id (line guard key); cycle id is separate.
+    purpose_ref_id: 5,
+    insurance_cycle_config_id: 33,
     unit_cost_centavos: 15000,
     currency: 'MXN',
     concept: 'Seguro anual 2026',
@@ -57,6 +59,7 @@ describe('FieldPaymentOrdersService', () => {
   let flag: any;
   let proofs: any;
   let pdf: any;
+  let coverage: any;
   let insurancePort: any;
   let camporeePort: any;
   let service: FieldPaymentOrdersService;
@@ -94,6 +97,7 @@ describe('FieldPaymentOrdersService', () => {
     };
     proofs = { upload: jest.fn(), getSignedDownload: jest.fn() };
     pdf = { render: jest.fn().mockResolvedValue(Buffer.from('%PDF')) };
+    coverage = { findStaffKeys: jest.fn().mockResolvedValue(new Set()) };
     insurancePort = {
       prepareOrder: jest.fn().mockResolvedValue(preparedOrder()),
       fulfill: jest.fn().mockResolvedValue(undefined),
@@ -105,6 +109,7 @@ describe('FieldPaymentOrdersService', () => {
       flag,
       proofs,
       pdf,
+      coverage,
       insurancePort,
       camporeePort,
     );
@@ -125,6 +130,7 @@ describe('FieldPaymentOrdersService', () => {
       expect(folio.allocate).toHaveBeenCalledWith(tx, 7);
       const data = tx.field_payment_orders.create.mock.calls[0][0].data;
       expect(data.purpose).toBe('INSURANCE');
+      // the order keeps the cycle id; only the line guard uses the year id
       expect(data.insurance_cycle_config_id).toBe(33);
       expect(data.local_camporee_id).toBeNull();
       expect(data.total_centavos).toBe(30000);
@@ -133,7 +139,8 @@ describe('FieldPaymentOrdersService', () => {
         sequence: 1,
         beneficiary_user_id: 'ben-1',
         purpose: 'INSURANCE',
-        purpose_ref_id: 33,
+        // one live-or-paid order per person per year: guard keyed by the year
+        purpose_ref_id: 5,
       });
       // expiry ≈ now + 15 days
       const deltaDays =
@@ -186,17 +193,32 @@ describe('FieldPaymentOrdersService', () => {
       expect(data.insurance_cycle_config_id).toBeNull();
     });
 
-    it('rejects creation when the LF flag is off', async () => {
+    it('rejects camporee creation when the LF flag is off', async () => {
       flag.isEnabledForLocalField.mockResolvedValue(false);
+      camporeePort.prepareOrder.mockResolvedValue(
+        preparedOrder({ purpose_ref_id: 40, camporee_scope: 'local' }),
+      );
       await expect(
-        service.createInsuranceOrder(
-          { insurance_cycle_config_id: 33, beneficiary_user_ids: ['ben-1'] },
+        service.createCamporeeOrder(
+          40,
+          { beneficiary_user_ids: ['ben-1'] },
           directorActor(),
         ),
       ).rejects.toMatchObject({
         code: ErrorCode.FIELD_PAYMENT_ORDER_FLAG_DISABLED,
       });
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('issues insurance orders even when the LF flag is off (legacy retired)', async () => {
+      flag.isEnabledForLocalField.mockResolvedValue(false);
+      tx.field_payment_orders.create.mockResolvedValue({ id: 'o1' });
+      await service.createInsuranceOrder(
+        { insurance_cycle_config_id: 33, beneficiary_user_ids: ['ben-1'] },
+        directorActor(),
+      );
+      expect(flag.isEnabledForLocalField).not.toHaveBeenCalled();
+      expect(tx.field_payment_orders.create).toHaveBeenCalled();
     });
 
     it('maps P2002 to duplicate beneficiary conflict', async () => {
@@ -335,6 +357,69 @@ describe('FieldPaymentOrdersService', () => {
         section_name: 'Conquistadores',
         camporee_name: 'Camporee 2026',
         local_field_name: 'Campo Norte',
+      });
+    });
+
+    it('getDetail and list add beneficiary_name and is_staff to every line', async () => {
+      const order = {
+        field_payment_order_id: 'o1',
+        club_section_id: 11,
+        club_id: 5,
+        local_field_id: 7,
+        purpose: 'INSURANCE',
+        local_camporee_id: null,
+        union_camporee_id: null,
+        insurance_cycle_config_id: null,
+        status: 'ISSUED',
+        expires_at: FUTURE,
+        lines: [
+          { sequence: 1, beneficiary_user_id: 'ben-1' },
+          { sequence: 2, beneficiary_user_id: 'ben-2' },
+        ],
+      };
+      prisma.field_payment_orders.findUnique.mockResolvedValue(order);
+      prisma.field_payment_orders.findMany.mockResolvedValue([order]);
+      prisma.local_fields = { findUnique: jest.fn().mockResolvedValue(null) };
+      prisma.clubs = { findUnique: jest.fn().mockResolvedValue(null) };
+      prisma.club_sections = { findUnique: jest.fn().mockResolvedValue(null) };
+      prisma.users = {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            user_id: 'ben-1',
+            name: 'Ana',
+            paternal_last_name: 'Pérez',
+            maternal_last_name: 'Ruiz',
+          },
+          {
+            user_id: 'ben-2',
+            name: 'Luis',
+            paternal_last_name: 'Gómez',
+            maternal_last_name: null,
+          },
+        ]),
+      };
+      coverage.findStaffKeys.mockResolvedValue(new Set(['11:ben-2']));
+
+      const detail = await service.getDetail('o1', directorActor());
+      expect(detail.lines).toEqual([
+        {
+          sequence: 1,
+          beneficiary_user_id: 'ben-1',
+          beneficiary_name: 'Ana Pérez Ruiz',
+          is_staff: false,
+        },
+        {
+          sequence: 2,
+          beneficiary_user_id: 'ben-2',
+          beneficiary_name: 'Luis Gómez',
+          is_staff: true,
+        },
+      ]);
+
+      const [listed] = await service.list({}, directorActor());
+      expect(listed.lines[1]).toMatchObject({
+        beneficiary_name: 'Luis Gómez',
+        is_staff: true,
       });
     });
 
@@ -559,14 +644,15 @@ describe('FieldPaymentOrdersService', () => {
       });
     });
 
-    it('skips the cycle query when the flag is disabled', async () => {
+    it('still lists insurance cycles when the camporee flag is disabled', async () => {
       flag.isEnabledForLocalField.mockResolvedValue(false);
 
       const context = await service.getIssuerContext(directorActor());
 
       expect(context.enabled).toBe(false);
-      expect(context.insurance_cycles).toEqual([]);
-      expect(prisma.insurance_cycle_configs.findMany).not.toHaveBeenCalled();
+      expect(context.insurance_cycles).toEqual([
+        { insurance_cycle_config_id: 33 },
+      ]);
     });
 
     it('rejects actors without an active section', async () => {

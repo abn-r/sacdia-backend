@@ -38,6 +38,35 @@ function snapshot(permissions: string[], withClub = true) {
   };
 }
 
+function overview(
+  over: {
+    uninsured?: number;
+    free?: number;
+    deadline?: string | null;
+  } = {},
+) {
+  const deadline = over.deadline === undefined ? '2026-12-01' : over.deadline;
+  return {
+    year: null,
+    cycle: deadline
+      ? {
+          insurance_cycle_config_id: 1,
+          unit_cost: '150.00',
+          purchase_deadline: deadline,
+          currency: 'MXN',
+        }
+      : null,
+    counts: {
+      total: 10,
+      covered: 5,
+      in_process: 0,
+      uninsured: over.uninsured ?? 0,
+    },
+    free_coverages_count: over.free ?? 0,
+    people: [],
+  };
+}
+
 describe('DashboardPendingService', () => {
   // 2026-11-04 12:00 Mexico City
   const clock = new TestingClock(new Date('2026-11-04T18:00:00Z'));
@@ -54,6 +83,7 @@ describe('DashboardPendingService', () => {
   const catalogs = { getCurrentEcclesiasticalYear: jest.fn() };
   const membershipRequests = { listPending: jest.fn() };
   const investiture = { listForAuthorizer: jest.fn() };
+  const insurance = { getOverview: jest.fn() };
 
   let service: DashboardPendingService;
 
@@ -85,12 +115,14 @@ describe('DashboardPendingService', () => {
     investiture.listForAuthorizer.mockRejectedValue(
       new AppForbiddenException(ErrorCode.INVESTITURE_REQUEST_FORBIDDEN),
     );
+    insurance.getOverview.mockResolvedValue(overview());
     service = new DashboardPendingService(
       prisma as never,
       authContext as never,
       catalogs as never,
       membershipRequests as never,
       investiture as never,
+      insurance as never,
       clock,
     );
   });
@@ -493,5 +525,88 @@ describe('DashboardPendingService', () => {
     membershipRequests.listPending.mockResolvedValue([{}]);
     const result = await service.getPending('u1');
     expect(result.items.map((i) => i.type)).toEqual(['membership_requests']);
+  });
+
+  describe('insurance (annual model)', () => {
+    const ISSUER = ['field-payment-orders:create'];
+
+    it('uninsured_members: warning before the deadline, with due_date and days_left', async () => {
+      authContext.resolveUserAuthorization.mockResolvedValue(snapshot(ISSUER));
+      insurance.getOverview.mockResolvedValue(
+        overview({ uninsured: 4, deadline: '2026-11-14' }),
+      );
+      // today is 2026-11-04 (Mexico City)
+      const result = await service.getPending('u1');
+      expect(insurance.getOverview).toHaveBeenCalledWith(123);
+      expect(result.items).toEqual([
+        {
+          type: 'uninsured_members',
+          count: 4,
+          due_date: '2026-11-14',
+          days_left: 10,
+          severity: 'warning',
+        },
+      ]);
+    });
+
+    it('uninsured_members: still warning ON the deadline day (inclusive)', async () => {
+      authContext.resolveUserAuthorization.mockResolvedValue(snapshot(ISSUER));
+      insurance.getOverview.mockResolvedValue(
+        overview({ uninsured: 1, deadline: '2026-11-04' }),
+      );
+      const [item] = (await service.getPending('u1')).items as any[];
+      expect(item).toMatchObject({ days_left: 0, severity: 'warning' });
+    });
+
+    it('uninsured_members: urgent after the deadline', async () => {
+      authContext.resolveUserAuthorization.mockResolvedValue(snapshot(ISSUER));
+      insurance.getOverview.mockResolvedValue(
+        overview({ uninsured: 2, deadline: '2026-11-03' }),
+      );
+      const [item] = (await service.getPending('u1')).items as any[];
+      expect(item).toMatchObject({ days_left: -1, severity: 'urgent' });
+    });
+
+    it('uninsured_members: omitted without an active cycle or without uninsured people', async () => {
+      authContext.resolveUserAuthorization.mockResolvedValue(snapshot(ISSUER));
+      insurance.getOverview.mockResolvedValue(
+        overview({ uninsured: 3, deadline: null }),
+      );
+      expect((await service.getPending('u1')).items).toEqual([]);
+      insurance.getOverview.mockResolvedValue(overview({ uninsured: 0 }));
+      expect((await service.getPending('u1')).items).toEqual([]);
+    });
+
+    it('free_insurance: info with the free coverages count', async () => {
+      authContext.resolveUserAuthorization.mockResolvedValue(snapshot(ISSUER));
+      insurance.getOverview.mockResolvedValue(overview({ free: 2 }));
+      expect((await service.getPending('u1')).items).toEqual([
+        { type: 'free_insurance', count: 2, severity: 'info' },
+      ]);
+    });
+
+    it('both items are omitted (and the overview never read) without field-payment-orders:create', async () => {
+      authContext.resolveUserAuthorization.mockResolvedValue(
+        snapshot(ALL_PERMS),
+      );
+      insurance.getOverview.mockResolvedValue(
+        overview({ uninsured: 5, free: 3 }),
+      );
+      expect((await service.getPending('u1')).items).toEqual([]);
+      expect(insurance.getOverview).not.toHaveBeenCalled();
+    });
+
+    it('reads the overview once for both items', async () => {
+      authContext.resolveUserAuthorization.mockResolvedValue(snapshot(ISSUER));
+      insurance.getOverview.mockResolvedValue(
+        overview({ uninsured: 1, free: 1 }),
+      );
+      const result = await service.getPending('u1');
+      expect(result.items.map((i) => i.type)).toEqual([
+        'uninsured_members',
+        'free_insurance',
+      ]);
+      expect(insurance.getOverview).toHaveBeenCalledTimes(1);
+    });
   });
 });

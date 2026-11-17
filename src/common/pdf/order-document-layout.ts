@@ -4,6 +4,8 @@
  * grid, section headers, tables with a tinted header, page footers.
  */
 
+import { loadBrandLogos, type BrandLogos } from './brand-logos';
+
 export const ORDER_PDF_COLORS = {
   primary: '#D94A3B',
   primarySoft: '#FDE8E6',
@@ -62,6 +64,8 @@ export interface OrderDocumentSpec {
   reference: string;
   notices: string[];
   legend: string;
+  /** Brand marks for the top band; defaults to the bundled SACDIA/IASD logos. */
+  logos?: BrandLogos;
 }
 
 const PAGE_X = 48;
@@ -105,7 +109,51 @@ function ensureSpace(
   return PAGE_TOP;
 }
 
+const BRAND_LOGO = 34;
+
+/**
+ * Brand band above the title: SACDIA app mark + name on the left, IASD logo
+ * on the right (same pairing as the finance report). Returns the y below it.
+ */
+function drawBrandBand(doc: PDFKit.PDFDocument, logos: BrandLogos): number {
+  const width = contentWidth(doc);
+  let textX = PAGE_X;
+  if (logos.sacdia) {
+    doc.save();
+    doc.roundedRect(PAGE_X, PAGE_TOP, BRAND_LOGO, BRAND_LOGO, 8).clip();
+    doc.image(logos.sacdia, PAGE_X, PAGE_TOP, {
+      width: BRAND_LOGO,
+      height: BRAND_LOGO,
+    });
+    doc.restore();
+    textX = PAGE_X + BRAND_LOGO + 10;
+  }
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(12)
+    .fillColor(ORDER_PDF_COLORS.ink)
+    .text('SACDIA', textX, PAGE_TOP + 6, { lineBreak: false });
+  doc
+    .font('Helvetica')
+    .fontSize(7.5)
+    .fillColor(ORDER_PDF_COLORS.muted)
+    .text('Sistema de Administración de Clubes JA', textX, PAGE_TOP + 21, {
+      lineBreak: false,
+    });
+  if (logos.iasd) {
+    // iasd-logo.png is 847×200.
+    const h = 26;
+    const w = (h * 847) / 200;
+    doc.image(logos.iasd, PAGE_X + width - w, PAGE_TOP + (BRAND_LOGO - h) / 2, {
+      width: w,
+      height: h,
+    });
+  }
+  return PAGE_TOP + BRAND_LOGO + 18;
+}
+
 function drawHeader(doc: PDFKit.PDFDocument, spec: OrderDocumentSpec): number {
+  const top = drawBrandBand(doc, spec.logos ?? loadBrandLogos());
   const width = contentWidth(doc);
   const titleW = width * 0.62;
   doc.font('Helvetica-Bold').fontSize(20);
@@ -113,9 +161,9 @@ function drawHeader(doc: PDFKit.PDFDocument, spec: OrderDocumentSpec): number {
   const titleH = doc.heightOfString(spec.title, { width: titleW });
   doc
     .fillColor(ORDER_PDF_COLORS.primary)
-    .text(spec.title, PAGE_X, PAGE_TOP, { width: titleW });
+    .text(spec.title, PAGE_X, top, { width: titleW });
   doc.font('Helvetica').fontSize(10);
-  const subtitleY = PAGE_TOP + titleH + 4;
+  const subtitleY = top + titleH + 4;
   const subtitleH = doc.heightOfString(spec.subtitle, { width: titleW });
   doc
     .fillColor(ORDER_PDF_COLORS.muted)
@@ -126,8 +174,8 @@ function drawHeader(doc: PDFKit.PDFDocument, spec: OrderDocumentSpec): number {
   doc.font('Helvetica-Bold').fontSize(9);
   const pillW = doc.widthOfString(spec.status.label) + 20;
   const pillX = PAGE_X + width - pillW;
-  doc.roundedRect(pillX, PAGE_TOP, pillW, 20, 10).fill(tone.bg);
-  doc.fillColor(tone.fg).text(spec.status.label, pillX, PAGE_TOP + 6, {
+  doc.roundedRect(pillX, top, pillW, 20, 10).fill(tone.bg);
+  doc.fillColor(tone.fg).text(spec.status.label, pillX, top + 6, {
     width: pillW,
     align: 'center',
   });
@@ -135,9 +183,9 @@ function drawHeader(doc: PDFKit.PDFDocument, spec: OrderDocumentSpec): number {
     .font('Helvetica-Bold')
     .fontSize(16)
     .fillColor(ORDER_PDF_COLORS.ink)
-    .text(spec.folio, PAGE_X, PAGE_TOP + 28, { width, align: 'right' });
+    .text(spec.folio, PAGE_X, top + 28, { width, align: 'right' });
 
-  const y = Math.max(PAGE_TOP + 58, subtitleY + subtitleH + 10);
+  const y = Math.max(top + 58, subtitleY + subtitleH + 10);
   doc
     .moveTo(PAGE_X, y)
     .lineTo(PAGE_X + width, y)

@@ -74,7 +74,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     // ── AppException: domain error with ErrorCode ──────────────────────────
     if (exception instanceof AppException) {
-      const { code, namedArgs, details } = exception.getResponse();
+      const { code, namedArgs, details, data } = exception.getResponse();
       const lang = this.resolveLang(host);
 
       let translatedMessage: string;
@@ -114,6 +114,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         statusCode: status,
         code,
         message: maskedMessage,
+        ...(data !== undefined ? { data } : {}),
         ...(process.env.NODE_ENV !== 'production' && details !== undefined
           ? { details }
           : {}),

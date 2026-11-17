@@ -86,10 +86,8 @@ const baseline = {
     'effectiveWhere|T09|3|bd0ef8dee119',
   'field-payment-orders/fulfillment/camporee-fulfillment.service.ts':
     'effectiveWhere|T09|1|937b312a4f96',
-  'field-payment-orders/fulfillment/insurance-fulfillment.service.ts':
-    'effectiveWhere|T09|1|937b312a4f96',
-  'field-payment-orders/insurance-reassignments.service.ts':
-    'effectiveWhere|T09|1|257d0ba772be',
+  'field-payment-orders/insurance-coverage.service.ts':
+    'effectiveWhere|T09|3|4d80e7827fe8',
   'guardianships/guardianship-queries.ts':
     'workflowWhere|allowlist|3|5acfc142566f',
   'guardianships/director-dependents.service.ts':

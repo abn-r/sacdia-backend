@@ -27,28 +27,13 @@ describe('InsurancePurchasesService', () => {
     persistPurchaseProof: jest.fn(),
     discardUploadedProof: jest.fn(),
   };
-  const fieldPaymentOrdersFlag = {
-    isEnabledForLocalField: jest.fn().mockResolvedValue(false),
-  };
-  const service = new InsurancePurchasesService(
-    prisma as any,
-    evidence as any,
-    fieldPaymentOrdersFlag as any,
-  );
+  const service = new InsurancePurchasesService(prisma as any, evidence as any);
 
   beforeEach(() => {
     jest.clearAllMocks();
-    fieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValue(false);
   });
 
-  it('blocks manual purchase submission when field payment orders are enabled for the LF', async () => {
-    prisma.club_sections.findUnique.mockResolvedValue({
-      club_section_id: 7,
-      main_club_id: 9,
-      club: { local_field_id: 3, club_type_id: 2 },
-    });
-    fieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValue(true);
-
+  it('always rejects quantity purchase submission (legacy retired), regardless of the flag', async () => {
     await expect(
       service.submit(
         7,
@@ -63,78 +48,9 @@ describe('InsurancePurchasesService', () => {
         { userId: 'u1', sectionIds: [7], localFieldId: 3 },
       ),
     ).rejects.toMatchObject({ code: 'FIELD_PAYMENT_ORDER_LEGACY_DISABLED' });
-    expect(fieldPaymentOrdersFlag.isEnabledForLocalField).toHaveBeenCalledWith(
-      3,
-    );
+    expect(prisma.club_sections.findUnique).not.toHaveBeenCalled();
+    expect(evidence.uploadPurchaseProof).not.toHaveBeenCalled();
     expect(tx.insurance_purchases.create).not.toHaveBeenCalled();
-  });
-
-  it('uses the actual section club and rejects a cycle outside the section field/type without creating slots', async () => {
-    prisma.club_sections.findUnique.mockResolvedValue({
-      club_section_id: 7,
-      main_club_id: 9,
-      club: { local_field_id: 3, club_type_id: 2 },
-    });
-    prisma.insurance_cycle_configs.findUnique.mockResolvedValue({
-      insurance_cycle_config_id: 1,
-      local_field_id: 4,
-      club_type_id: 2,
-      active: true,
-    });
-
-    await expect(
-      service.submit(
-        7,
-        {
-          insurance_cycle_config_id: 1,
-          quantity: 2,
-          total_amount: 100,
-          receipt_date: '2026-01-01',
-          external_reference: 'X',
-        },
-        {} as Express.Multer.File,
-        { userId: 'u1', sectionIds: [7], localFieldId: 3 },
-      ),
-    ).rejects.toMatchObject({ code: 'INSURANCE_CYCLE_OUTSIDE_LOCAL_FIELD' });
-    expect(tx.insurance_coverage_slots.createMany).not.toHaveBeenCalled();
-  });
-
-  it('compensates R2 upload when the purchase database write fails', async () => {
-    prisma.club_sections.findUnique.mockResolvedValue({
-      club_section_id: 7,
-      main_club_id: 9,
-      club: { local_field_id: 3, club_type_id: 2 },
-    });
-    prisma.insurance_cycle_configs.findUnique.mockResolvedValue({
-      insurance_cycle_config_id: 1,
-      local_field_id: 3,
-      club_type_id: 2,
-      active: true,
-    });
-    tx.insurance_purchases.create.mockRejectedValue(
-      new Error('db unavailable'),
-    );
-    evidence.uploadPurchaseProof.mockResolvedValue({
-      fileKey: 'insurance/lf-3/purchase-pending/proof.pdf',
-    });
-
-    await expect(
-      service.submit(
-        7,
-        {
-          insurance_cycle_config_id: 1,
-          quantity: 2,
-          total_amount: 100,
-          receipt_date: '2026-01-01',
-          external_reference: 'X',
-        },
-        {} as Express.Multer.File,
-        { userId: 'u1', sectionIds: [7], localFieldId: 3 },
-      ),
-    ).rejects.toThrow('db unavailable');
-    expect(evidence.discardUploadedProof).toHaveBeenCalledWith(
-      'insurance/lf-3/purchase-pending/proof.pdf',
-    );
   });
 
   it('confirms inclusively and atomically materializes exactly N slots', async () => {

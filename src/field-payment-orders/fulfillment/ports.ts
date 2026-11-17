@@ -9,7 +9,14 @@ export interface PreparedOrder {
   local_field_id: number;
   club_id: number;
   club_section_id: number;
+  /**
+   * Dedupe key of the line guard (unique per beneficiary+purpose+ref while the
+   * order is live). INSURANCE: the ecclesiastical year id (one insurance per
+   * person per year). CAMPOREE: the camporee id.
+   */
   purpose_ref_id: number;
+  /** INSURANCE only: the cycle config the order was issued against. */
+  insurance_cycle_config_id?: number;
   /**
    * CAMPOREE only: whether purpose_ref_id points to local_camporees or
    * union_camporees. Defaults to 'local' when absent.

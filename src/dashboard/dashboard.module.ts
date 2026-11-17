@@ -6,6 +6,7 @@ import { ClassesModule } from '../classes/classes.module';
 import { CatalogsModule } from '../catalogs/catalogs.module';
 import { MembershipRequestsModule } from '../membership-requests/membership-requests.module';
 import { InvestitureRequestsModule } from '../investiture-requests/investiture-requests.module';
+import { FieldPaymentOrdersModule } from '../field-payment-orders/field-payment-orders.module';
 import { DashboardPendingService } from './dashboard-pending.service';
 
 @Module({
@@ -15,6 +16,7 @@ import { DashboardPendingService } from './dashboard-pending.service';
     CatalogsModule,
     MembershipRequestsModule,
     InvestitureRequestsModule,
+    FieldPaymentOrdersModule,
   ],
   controllers: [DashboardController],
   providers: [DashboardService, DashboardPendingService],

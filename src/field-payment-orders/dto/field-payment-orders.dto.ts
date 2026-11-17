@@ -22,7 +22,7 @@ export class CreateInsurancePaymentOrderDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayUnique()
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   beneficiary_user_ids!: string[];
 }
 
@@ -30,7 +30,7 @@ export class CreateCamporeePaymentOrderDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayUnique()
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   beneficiary_user_ids!: string[];
 }
 

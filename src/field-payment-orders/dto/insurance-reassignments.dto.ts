@@ -15,7 +15,7 @@ export class CreateInsuranceReassignmentDto {
   @Min(1)
   insurance_assignment_id!: number;
 
-  @IsUUID('4')
+  @IsUUID('all')
   to_user_id!: string;
 
   @IsOptional()

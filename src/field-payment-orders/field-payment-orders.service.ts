@@ -1,3 +1,4 @@
+import { isUUID } from 'class-validator';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import 'multer';
@@ -17,6 +18,10 @@ import {
 import { FieldPaymentFolioService } from './folio.service';
 import { FieldPaymentOrdersFlagService } from './field-payment-orders-flag.service';
 import { FieldPaymentOrderProofService } from './field-payment-order-proof.service';
+import {
+  InsuranceCoverageService,
+  formatUserName,
+} from './insurance-coverage.service';
 import {
   FieldPaymentOrderPdfModel,
   FieldPaymentOrderPdfService,
@@ -49,6 +54,7 @@ export class FieldPaymentOrdersService {
     private readonly flag: FieldPaymentOrdersFlagService,
     private readonly proofs: FieldPaymentOrderProofService,
     private readonly pdf: FieldPaymentOrderPdfService,
+    private readonly coverage: InsuranceCoverageService,
     @Inject(INSURANCE_FULFILLMENT_PORT)
     private readonly insuranceFulfillment: PurposeFulfillment,
     @Inject(CAMPOREE_FULFILLMENT_PORT)
@@ -117,6 +123,12 @@ export class FieldPaymentOrdersService {
     actor: OrderActor,
     idempotencyKey?: string,
   ) {
+    if (idempotencyKey && !isUUID(idempotencyKey)) {
+      // `idempotency_key` is a uuid column: reject instead of a Prisma 500.
+      throw new AppBadRequestException(ErrorCode.VALIDATION_FAILED, {
+        reason: 'idempotency_key_not_uuid',
+      });
+    }
     if (idempotencyKey) {
       const existing = await this.prisma.field_payment_orders.findFirst({
         where: { issued_by_id: actor.userId, idempotency_key: idempotencyKey },
@@ -132,7 +144,12 @@ export class FieldPaymentOrdersService {
       actor,
     );
 
-    if (!(await this.flag.isEnabledForLocalField(prepared.local_field_id))) {
+    // Insurance orders are the only insurance path (legacy retired): they no
+    // longer depend on `field_payment_orders_v1`. Camporee keeps the flag.
+    if (
+      purpose === 'CAMPOREE' &&
+      !(await this.flag.isEnabledForLocalField(prepared.local_field_id))
+    ) {
       throw new AppForbiddenException(
         ErrorCode.FIELD_PAYMENT_ORDER_FLAG_DISABLED,
       );
@@ -168,7 +185,9 @@ export class FieldPaymentOrdersService {
             folio,
             folio_reference,
             insurance_cycle_config_id:
-              purpose === 'INSURANCE' ? prepared.purpose_ref_id : null,
+              purpose === 'INSURANCE'
+                ? (prepared.insurance_cycle_config_id ?? null)
+                : null,
             local_camporee_id:
               purpose === 'CAMPOREE' && prepared.camporee_scope !== 'union'
                 ? prepared.purpose_ref_id
@@ -243,18 +262,17 @@ export class FieldPaymentOrdersService {
     }
 
     const enabled = await this.flag.isEnabledForLocalField(localFieldId);
-    const insuranceCycles = enabled
-      ? await this.prisma.insurance_cycle_configs.findMany({
-          where: {
-            local_field_id: localFieldId,
-            club_type_id: sectionRow.club_type_id,
-            active: true,
-            product: { active: true },
-          },
-          include: { product: true, ecclesiastical_year: true },
-          orderBy: { ecclesiastical_year_id: 'desc' },
-        })
-      : [];
+    // Insurance cycles are offered regardless of the flag (flag gates camporee).
+    const insuranceCycles = await this.prisma.insurance_cycle_configs.findMany({
+      where: {
+        local_field_id: localFieldId,
+        club_type_id: sectionRow.club_type_id,
+        active: true,
+        product: { active: true },
+      },
+      include: { product: true, ecclesiastical_year: true },
+      orderBy: { ecclesiastical_year_id: 'desc' },
+    });
 
     return {
       enabled,
@@ -270,7 +288,7 @@ export class FieldPaymentOrdersService {
     const scope = this.buildScopeWhere(actor);
     await this.expireDueOrders(scope);
 
-    return this.prisma.field_payment_orders.findMany({
+    const orders = await this.prisma.field_payment_orders.findMany({
       where: {
         ...scope,
         ...(query.purpose ? { purpose: query.purpose } : {}),
@@ -283,6 +301,7 @@ export class FieldPaymentOrdersService {
       include: { lines: true },
       orderBy: { created_at: 'desc' },
     });
+    return this.withBeneficiaryNames(orders);
   }
 
   async get(orderId: string, actor: OrderActor) {
@@ -294,8 +313,9 @@ export class FieldPaymentOrdersService {
   async getDetail(orderId: string, actor: OrderActor) {
     const order = await this.get(orderId, actor);
     const names = await this.resolveOrderNames(order);
+    const [decorated] = await this.withBeneficiaryNames([order]);
     return {
-      ...order,
+      ...decorated,
       club_name: names.club_name,
       section_name: names.section_name,
       camporee_name: names.camporee_name,
@@ -383,7 +403,7 @@ export class FieldPaymentOrdersService {
     const scope = this.reviewScopeWhere(actor);
     await this.expireDueOrders(scope);
 
-    return this.prisma.field_payment_orders.findMany({
+    const orders = await this.prisma.field_payment_orders.findMany({
       where: {
         ...scope,
         status: 'PROOF_SUBMITTED',
@@ -396,6 +416,7 @@ export class FieldPaymentOrdersService {
       include: { lines: true, proofs: { orderBy: { created_at: 'desc' } } },
       orderBy: { created_at: 'asc' },
     });
+    return this.withBeneficiaryNames(orders);
   }
 
   async approve(orderId: string, actor: OrderActor) {
@@ -672,6 +693,56 @@ export class FieldPaymentOrdersService {
       });
     });
     this.logEvent('expired', { count: ids.length, order_ids: ids });
+  }
+
+  /**
+   * Adds `beneficiary_name` and `is_staff` (non-member role in the order's
+   * section) to every line, with two extra queries for the whole page.
+   */
+  private async withBeneficiaryNames<
+    T extends {
+      club_section_id: number;
+      lines?: Array<{ beneficiary_user_id: string }>;
+    },
+  >(orders: T[]) {
+    const userIds = [
+      ...new Set(
+        orders.flatMap((order) =>
+          (order.lines ?? []).map((line) => line.beneficiary_user_id),
+        ),
+      ),
+    ];
+    const [users, staffKeys] = await Promise.all([
+      userIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.users.findMany({
+            where: { user_id: { in: userIds } },
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          }),
+      this.coverage.findStaffKeys(
+        this.prisma,
+        [...new Set(orders.map((order) => order.club_section_id))],
+        userIds,
+      ),
+    ]);
+    const nameById = new Map(
+      users.map((user) => [user.user_id, formatUserName(user)] as const),
+    );
+    return orders.map((order) => ({
+      ...order,
+      lines: (order.lines ?? []).map((line) => ({
+        ...line,
+        beneficiary_name: nameById.get(line.beneficiary_user_id) ?? '',
+        is_staff: staffKeys.has(
+          `${order.club_section_id}:${line.beneficiary_user_id}`,
+        ),
+      })),
+    }));
   }
 
   private async resolveOrderNames(order: {
