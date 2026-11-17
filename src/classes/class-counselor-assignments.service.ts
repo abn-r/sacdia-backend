@@ -170,23 +170,28 @@ export class ClassCounselorAssignmentsService {
       );
     }
 
-    if (responsibilityType === 'primary') {
-      const existingPrimary = await (
+    if (
+      responsibilityType === 'primary' ||
+      responsibilityType === 'assistant'
+    ) {
+      const existingSameRole = await (
         this.prisma as any
       ).class_counselor_assignments.findFirst({
         where: {
           club_section_id: sectionId,
           class_id: dto.class_id,
           ecclesiastical_year_id: ecclesiasticalYearId,
-          responsibility_type: 'primary',
+          responsibility_type: responsibilityType,
           active: true,
         },
         select: { assignment_id: true },
       });
 
-      if (existingPrimary) {
+      if (existingSameRole) {
         throw new AppConflictException(
-          ErrorCode.CLASS_COUNSELOR_PRIMARY_EXISTS,
+          responsibilityType === 'primary'
+            ? ErrorCode.CLASS_COUNSELOR_PRIMARY_EXISTS
+            : ErrorCode.CLASS_COUNSELOR_ASSISTANT_EXISTS,
         );
       }
     }
@@ -271,8 +276,12 @@ export class ClassCounselorAssignmentsService {
         dto.responsibility_type,
       );
 
-      if (responsibilityType === 'primary' && existing.active) {
-        const existingPrimary = await (
+      if (
+        (responsibilityType === 'primary' ||
+          responsibilityType === 'assistant') &&
+        existing.active
+      ) {
+        const existingSameRole = await (
           this.prisma as any
         ).class_counselor_assignments.findFirst({
           where: {
@@ -280,15 +289,17 @@ export class ClassCounselorAssignmentsService {
             club_section_id: existing.club_section_id,
             class_id: existing.class_id,
             ecclesiastical_year_id: existing.ecclesiastical_year_id,
-            responsibility_type: 'primary',
+            responsibility_type: responsibilityType,
             active: true,
           },
           select: { assignment_id: true },
         });
 
-        if (existingPrimary) {
+        if (existingSameRole) {
           throw new AppConflictException(
-            ErrorCode.CLASS_COUNSELOR_PRIMARY_EXISTS,
+            responsibilityType === 'primary'
+              ? ErrorCode.CLASS_COUNSELOR_PRIMARY_EXISTS
+              : ErrorCode.CLASS_COUNSELOR_ASSISTANT_EXISTS,
           );
         }
       }

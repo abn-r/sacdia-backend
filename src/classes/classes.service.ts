@@ -51,6 +51,8 @@ import {
 // Worst case: 10 sections × 20 evidence files = 200 concurrent HMAC presigns
 // against the private CLASS_EVIDENCE bucket. Cap matches the pattern established
 // in camporees.service.ts (PROFILE_URL_LIMITER = pLimit(20)).
+/** Product decision: max evidence files per class requirement (section). */
+export const CLASS_REQUIREMENT_MAX_FILES = 10;
 export const EVIDENCE_URL_LIMITER = pLimit(20);
 const GUIDE_MAJOR_ASSET_CODE = 'GM-01';
 
@@ -1262,6 +1264,7 @@ export class ClassesService {
               score: progress?.score || 0,
               evidences: progress?.evidences || null,
               evidence_files: evidenceFiles,
+              max_files: CLASS_REQUIREMENT_MAX_FILES,
               status: progress?.status ?? evidence_validation_enum.PENDING,
               submitted_by_name: this.formatUserName(
                 progress?.submitted_by ?? null,
@@ -1540,6 +1543,15 @@ export class ClassesService {
       const progressId = sectionProgress.section_progress_id;
       const extension = resolveEvidenceFileExtension(file);
       const objectKey = `${progressId}-${Date.now()}.${extension}`;
+      const activeEvidenceCount = await tx.evidence_files.count({
+        where: { section_progress_id: progressId, active: true },
+      });
+      if (activeEvidenceCount >= CLASS_REQUIREMENT_MAX_FILES) {
+        throw new AppBadRequestException(
+          ErrorCode.CLASS_EVIDENCE_MAX_FILES_REACHED,
+          { max: String(CLASS_REQUIREMENT_MAX_FILES) },
+        );
+      }
       const existingEvidenceCount = await tx.evidence_files.count({
         where: { section_progress_id: progressId },
       });

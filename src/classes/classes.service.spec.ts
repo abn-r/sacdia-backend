@@ -673,6 +673,8 @@ describe('ClassesService', () => {
         completed: true,
         status: 'VALIDATED',
       });
+      expect(result.modules[0].sections[0].max_files).toBe(10);
+      expect(result.modules[0].sections[1].max_files).toBe(10);
     });
 
     it('accepts an explicit enrollment override when ownership matches', async () => {
@@ -1469,6 +1471,48 @@ describe('ClassesService', () => {
           }),
         }),
       );
+    });
+
+    it('rejects an upload when the requirement already has 10 active files', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.class_section_progress.findFirst.mockResolvedValue({
+        section_progress_id: 123,
+        enrollment_id: 901,
+        section_id: 101,
+        status: 'PENDING',
+      });
+      mockPrismaService.evidence_files.count.mockResolvedValue(10);
+      const fileStorage = (service as any).fileStorage;
+      fileStorage.upload.mockClear();
+
+      await expect(
+        (service as any).uploadSectionFile(
+          'user-1',
+          'user-1',
+          7,
+          101,
+          {
+            buffer: Buffer.from('pdf'),
+            mimetype: 'application/pdf',
+            originalname: 'evidence.pdf',
+          },
+          901,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_EVIDENCE_MAX_FILES_REACHED,
+      });
+      expect(mockPrismaService.evidence_files.count).toHaveBeenCalledWith({
+        where: { section_progress_id: 123, active: true },
+      });
+      expect(fileStorage.upload).not.toHaveBeenCalled();
+      expect(mockPrismaService.evidence_files.create).not.toHaveBeenCalled();
     });
 
     it('throws CLASS_PROGRESS_LOCKED on upload when enrollment is locked', async () => {

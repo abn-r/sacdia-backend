@@ -45,7 +45,7 @@ const baseline = {
   'classes/class-progress-access.service.ts':
     'effectiveWhere|T08|2|5e737d2c3093',
   'classes/class-progress-scope.service.ts':
-    'effectiveWhere|T08|3|4213f4a7f3ae',
+    'effectiveWhere|T08|3|93f3d967bce4',
   'classes/class-requirement-eligibility.service.ts':
     'effectiveWhere|T08|2|a3be28c9e1b2',
   'certifications/eligibility/eligibility-rule-handlers.ts':

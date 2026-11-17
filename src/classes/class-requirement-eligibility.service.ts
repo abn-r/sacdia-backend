@@ -34,11 +34,20 @@ export type RequirementTrackProgress = {
   percentage: number;
 };
 
+export type RequirementStatusCounts = {
+  validated: number;
+  submitted: number;
+  rejected: number;
+  pending: number;
+};
+
 export type ClassRequirementEligibilityResult = {
   enrollment_id: number;
   class_id: number;
   ecclesiastical_year_id: number;
   applicable_section_ids: number[];
+  /** Applicable requirements (all tracks) grouped by progress status. */
+  status_counts: RequirementStatusCounts;
   required_investiture_section_ids: number[];
   completed_required_section_ids: number[];
   context_resolved: boolean;
@@ -311,6 +320,16 @@ export class ClassRequirementEligibilityService {
         .map((progress) => progress.section_id),
     );
 
+    const statusBySection = new Map(
+      progressRows.map((progress) => [progress.section_id, progress.status]),
+    );
+    const statusCounts: RequirementStatusCounts = {
+      validated: 0,
+      submitted: 0,
+      rejected: 0,
+      pending: 0,
+    };
+
     const hasConfiguredExtraRequirements = sections.some(
       (section) =>
         section.requirement_track === 'EXTRA' &&
@@ -328,6 +347,14 @@ export class ClassRequirementEligibilityService {
 
       return false;
     });
+
+    for (const section of applicableSections) {
+      const status = statusBySection.get(section.section_id);
+      if (status === 'VALIDATED') statusCounts.validated += 1;
+      else if (status === 'SUBMITTED') statusCounts.submitted += 1;
+      else if (status === 'REJECTED') statusCounts.rejected += 1;
+      else statusCounts.pending += 1;
+    }
 
     const requiredInvestitureSections = applicableSections.filter(
       (section) =>
@@ -379,6 +406,7 @@ export class ClassRequirementEligibilityService {
       applicable_section_ids: applicableSections.map(
         (section) => section.section_id,
       ),
+      status_counts: statusCounts,
       required_investiture_section_ids: requiredInvestitureSections.map(
         (section) => section.section_id,
       ),

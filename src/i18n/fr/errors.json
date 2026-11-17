@@ -390,6 +390,8 @@
   "CLASS_COUNSELOR_ASSIGNMENT_DUPLICATE": "L'utilisateur est déjà affecté à cette classe dans la section et l'année indiquées",
   "CLASS_COUNSELOR_CLASS_LIMIT_REACHED": "La classe a déjà atteint le maximum de 3 responsables actifs",
   "CLASS_COUNSELOR_PRIMARY_EXISTS": "La classe a déjà un responsable principal actif",
+  "CLASS_COUNSELOR_ASSISTANT_EXISTS": "La classe a déjà un assistant actif",
+  "CLASS_EVIDENCE_MAX_FILES_REACHED": "L'exigence de classe a déjà atteint le nombre maximal de fichiers de preuve",
   "CLASS_COUNSELOR_EXCEPTION_REQUIRED": "Une deuxième classe affectée requiert une exception et une justification",
   "CLASS_COUNSELOR_USER_LIMIT_REACHED": "L'utilisateur a déjà atteint le maximum de 2 classes actives affectées",
   "CLASS_COUNSELOR_INVALID_RESPONSIBILITY_TYPE": "Type de responsabilité de classe invalide",

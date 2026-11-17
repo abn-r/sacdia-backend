@@ -243,6 +243,61 @@ describe('ClassCounselorAssignmentsService', () => {
     );
   });
 
+  it('rejects a second active assistant on create', async () => {
+    mockPrisma.class_counselor_assignments.findFirst.mockImplementation(
+      ({ where }: { where: Record<string, unknown> }) =>
+        Promise.resolve(
+          where.responsibility_type === 'assistant' && !where.user_id
+            ? { assignment_id: '55555555-5555-5555-5555-555555555555' }
+            : null,
+        ),
+    );
+
+    await expect(
+      service.createAssignment({
+        ...baseParams,
+        dto: { ...baseParams.dto, responsibility_type: 'assistant' },
+      }),
+    ).rejects.toMatchObject({ code: 'CLASS_COUNSELOR_ASSISTANT_EXISTS' });
+    expect(
+      mockPrisma.class_counselor_assignments.findFirst,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          responsibility_type: 'assistant',
+          active: true,
+        }),
+      }),
+    );
+    expect(
+      mockPrisma.class_counselor_assignments.create,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('rejects switching to assistant when another active assistant exists', async () => {
+    mockPrisma.class_counselor_assignments.findFirst.mockResolvedValue({
+      assignment_id: '55555555-5555-5555-5555-555555555555',
+    });
+
+    await expect(
+      service.updateAssignment('44444444-4444-4444-4444-444444444444', {
+        responsibility_type: 'assistant',
+      }),
+    ).rejects.toMatchObject({ code: 'CLASS_COUNSELOR_ASSISTANT_EXISTS' });
+    expect(
+      mockPrisma.class_counselor_assignments.update,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('allows substitutes without the single-holder check', async () => {
+    await expect(
+      service.createAssignment({
+        ...baseParams,
+        dto: { ...baseParams.dto, responsibility_type: 'substitute' },
+      }),
+    ).resolves.toBeDefined();
+  });
+
   it('updates assignment responsibility while preserving class limits', async () => {
     await expect(
       service.updateAssignment('44444444-4444-4444-4444-444444444444', {
