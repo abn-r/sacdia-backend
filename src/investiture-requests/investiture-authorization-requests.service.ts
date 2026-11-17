@@ -39,7 +39,10 @@ import {
   type PresentationFacts,
   type PresentationVerdict,
 } from './investiture-presentation-rules';
-import { pastorCanAuthorize } from './investiture-pastor-eligibility';
+import {
+  eligiblePastorUserIds,
+  pastorCanAuthorize,
+} from './investiture-pastor-eligibility';
 import {
   crossTypeHomeAssignmentWhere,
   sectionMemberAssignmentWhere,
@@ -154,6 +157,12 @@ export type InvestitureRequestView = {
   /** Earliest `investiture_date` among the PENDING people, or null. */
   earliest_investiture_date?: string | null;
   created_at?: string;
+  /** Who presented the request; null when the id is missing. */
+  created_by?: { user_id: string; name: string } | null;
+  /** People of this request with status INVESTED. */
+  invested_count?: number;
+  /** People REJECTED_BY_PERSON or REJECTED_BY_SYSTEM. */
+  rejected_count?: number;
   people: InvestitureRequestPersonView[];
 };
 
@@ -183,6 +192,10 @@ export type InvestitureHistoryEntry = {
   system_reason?: string | null;
   person_text: string | null;
   authorization_comment?: string | null;
+  /** Resolver's name for resolved people ('Sistema' for system rejections). */
+  resolved_by_name: string | null;
+  /** ISO instant of the resolution (`modified_at`), resolved people only. */
+  resolved_at: string | null;
 };
 
 export type InvestitureYearbookEntry = {
@@ -583,6 +596,8 @@ export class InvestitureAuthorizationRequestService {
     );
     const candidates: PresentationCandidate[] = enrollments.map((row) => {
       const verdict = verdicts.get(row.enrollment_id);
+      const eligible = verdict?.eligible ?? false;
+      const counts = eligibility.get(row.enrollment_id)?.status_counts;
       return {
         enrollment_id: row.enrollment_id,
         user_id: row.user_id,
@@ -591,8 +606,13 @@ export class InvestitureAuthorizationRequestService {
         class_name: row.classes?.name ?? null,
         overall_progress:
           eligibility.get(row.enrollment_id)?.overall_progress ?? 0,
-        eligible: verdict?.eligible ?? false,
+        eligible,
         blocked_code: verdict && !verdict.eligible ? verdict.code : null,
+        missing_requirements_count: eligible
+          ? null
+          : counts
+            ? counts.submitted + counts.rejected + counts.pending
+            : 0,
         pending_person_id: pendingByEnrollment.get(row.enrollment_id) ?? null,
       };
     });
@@ -616,8 +636,38 @@ export class InvestitureAuthorizationRequestService {
       },
       year_open: this.isYearOpen(context, at),
       open_request_id: openRequestId,
+      authorizers: await this.districtAuthorizers(context.districtId),
       candidates,
     };
+  }
+
+  /** Active, eligible investiture pastors of the district, sorted by name. */
+  private async districtAuthorizers(
+    districtId: number | null,
+  ): Promise<Array<{ user_id: string; name: string }>> {
+    if (districtId == null) {
+      return [];
+    }
+    const rows = await this.prisma.district_investiture_pastors.findMany({
+      where: { districlub_type_id: districtId, active: true },
+      select: { user_id: true },
+    });
+    if (rows.length === 0) {
+      return [];
+    }
+    const eligible = await eligiblePastorUserIds(
+      this.prisma,
+      rows.map((row) => row.user_id),
+    );
+    const ids = rows.map((row) => row.user_id).filter((id) => eligible.has(id));
+    const names = await this.userNames(this.prisma, ids);
+    return ids
+      .map((id) => ({ user_id: id, name: names.get(id) ?? '' }))
+      .sort(
+        (left, right) =>
+          compareNames(left.name, right.name) ||
+          left.user_id.localeCompare(right.user_id),
+      );
   }
 
   /**
@@ -798,6 +848,7 @@ export class InvestitureAuthorizationRequestService {
     authorization: AuthorizationSnapshot,
     actorId: string,
     ecclesiasticalYearId: number,
+    options: { includeResolved?: boolean } = {},
   ): Promise<InvestitureRequestView[]> {
     const sectionIds = await this.authorizerSectionIds(authorization, actorId);
     const rows = await this.prisma.investiture_authorization_requests.findMany({
@@ -819,6 +870,17 @@ export class InvestitureAuthorizationRequestService {
               },
             },
           },
+          // Same scope, every person already resolved.
+          ...(options.includeResolved
+            ? [
+                {
+                  AND: [
+                    { people: { some: {} } },
+                    { people: { none: { status: 'PENDING' as const } } },
+                  ],
+                },
+              ]
+            : []),
         ],
       },
       select: { request_id: true },
@@ -878,8 +940,17 @@ export class InvestitureAuthorizationRequestService {
       this.prisma,
       rows.map((row) => row.class_id),
     );
+    const resolvers = await this.userNames(
+      this.prisma,
+      rows.flatMap((row) => (row.resolved_by_id ? [row.resolved_by_id] : [])),
+    );
     return rows.map((row) =>
-      this.historyEntry(row, 'person', classNames.get(row.class_id) ?? null),
+      this.historyEntry(
+        row,
+        'person',
+        classNames.get(row.class_id) ?? null,
+        resolvers,
+      ),
     );
   }
 
@@ -907,8 +978,17 @@ export class InvestitureAuthorizationRequestService {
       this.prisma,
       rows.map((row) => row.class_id),
     );
+    const resolvers = await this.userNames(
+      this.prisma,
+      rows.flatMap((row) => (row.resolved_by_id ? [row.resolved_by_id] : [])),
+    );
     return rows.map((row) =>
-      this.historyEntry(row, 'section', classNames.get(row.class_id) ?? null),
+      this.historyEntry(
+        row,
+        'section',
+        classNames.get(row.class_id) ?? null,
+        resolvers,
+      ),
     );
   }
 
@@ -2104,6 +2184,7 @@ export class InvestitureAuthorizationRequestService {
         club_section_id: true,
         ecclesiastical_year_id: true,
         created_at: true,
+        created_by_id: true,
         people: {
           orderBy: { person_id: 'asc' },
         },
@@ -2132,6 +2213,7 @@ export class InvestitureAuthorizationRequestService {
         club_section_id: true,
         ecclesiastical_year_id: true,
         created_at: true,
+        created_by_id: true,
         people: {
           orderBy: { person_id: 'asc' },
         },
@@ -2150,6 +2232,7 @@ export class InvestitureAuthorizationRequestService {
       club_section_id: number;
       ecclesiastical_year_id: number;
       created_at: Date;
+      created_by_id?: string | null;
       people: Parameters<
         InvestitureAuthorizationRequestService['personView']
       >[0][];
@@ -2178,6 +2261,20 @@ export class InvestitureAuthorizationRequestService {
       pending_count: pendingDates.length,
       earliest_investiture_date: pendingDates[0] ?? null,
       created_at: request.created_at.toISOString(),
+      created_by: request.created_by_id
+        ? {
+            user_id: request.created_by_id,
+            name: labels.users.get(request.created_by_id) ?? '',
+          }
+        : null,
+      invested_count: request.people.filter(
+        (person) => person.status === 'INVESTED',
+      ).length,
+      rejected_count: request.people.filter(
+        (person) =>
+          person.status === 'REJECTED_BY_PERSON' ||
+          person.status === 'REJECTED_BY_SYSTEM',
+      ).length,
       people: request.people.map((person) =>
         this.personView(person, audience, personLabels),
       ),
@@ -2188,6 +2285,7 @@ export class InvestitureAuthorizationRequestService {
     store: Prisma.TransactionClient | PrismaService,
     requests: Array<{
       club_section_id: number;
+      created_by_id?: string | null;
       people: Array<{
         user_id: string;
         class_id: number;
@@ -2199,13 +2297,16 @@ export class InvestitureAuthorizationRequestService {
     const classes = new Map<number, string>();
     const people = requests.flatMap((request) => request.people);
     const userIds = [
-      ...new Set(
-        people.flatMap((person) =>
+      ...new Set([
+        ...requests.flatMap((request) =>
+          request.created_by_id ? [request.created_by_id] : [],
+        ),
+        ...people.flatMap((person) =>
           person.resolved_by_id
             ? [person.user_id, person.resolved_by_id]
             : [person.user_id],
         ),
-      ),
+      ]),
     ];
     const usersTable = (
       store as {
@@ -2336,6 +2437,44 @@ export class InvestitureAuthorizationRequestService {
     };
   }
 
+  private async userNames(
+    store: Prisma.TransactionClient | PrismaService,
+    userIds: string[],
+  ): Promise<Map<string, string>> {
+    const names = new Map<string, string>();
+    const unique = [...new Set(userIds)];
+    const usersTable = (
+      store as {
+        users?: {
+          findMany?: (args: unknown) => Promise<
+            Array<{
+              user_id: string;
+              name?: string | null;
+              paternal_last_name?: string | null;
+              maternal_last_name?: string | null;
+            }>
+          >;
+        };
+      }
+    ).users;
+    if (!usersTable?.findMany || unique.length === 0) {
+      return names;
+    }
+    const rows = await usersTable.findMany({
+      where: { user_id: { in: unique } },
+      select: {
+        user_id: true,
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+      },
+    });
+    for (const row of rows) {
+      names.set(row.user_id, displayName(row));
+    }
+    return names;
+  }
+
   private async classNames(
     store: Prisma.TransactionClient | PrismaService,
     classIds: number[],
@@ -2376,6 +2515,8 @@ export class InvestitureAuthorizationRequestService {
       authorization_comment?: string | null;
       rejection_reason?: string | null;
       system_reason?: string | null;
+      resolved_by_id?: string | null;
+      modified_at?: Date | null;
       classes?: { name?: string | null } | null;
       request: {
         club_section_id: number;
@@ -2384,6 +2525,7 @@ export class InvestitureAuthorizationRequestService {
     },
     audience: 'person' | 'section',
     className: string | null = person.classes?.name ?? null,
+    resolverNames: ReadonlyMap<string, string> = new Map(),
   ): InvestitureHistoryEntry {
     const closedYear = person.status === 'CLOSED_YEAR';
     const laterCertificate =
@@ -2401,6 +2543,18 @@ export class InvestitureAuthorizationRequestService {
       club_section_id: person.request.club_section_id,
       ecclesiastical_year_id: person.request.ecclesiastical_year_id,
       investiture_date: civilDate(person.investiture_date),
+      // CLOSED_YEAR is a calendar closure, not a resolution by someone.
+      resolved_by_name:
+        person.status === 'REJECTED_BY_SYSTEM'
+          ? 'Sistema'
+          : person.status === 'INVESTED' || rejected
+            ? (resolverNames.get(person.resolved_by_id ?? '') ?? null)
+            : null,
+      resolved_at:
+        (person.status === 'INVESTED' || rejected) &&
+        person.modified_at instanceof Date
+          ? person.modified_at.toISOString()
+          : null,
     };
     if (audience === 'person') {
       const informative = laterCertificate || historical;

@@ -498,6 +498,7 @@ function createWorld(options?: {
           club_section_id?: { in: number[] };
           people?: { some?: { status?: string; resolution_code?: string } };
           OR?: Array<{
+            AND?: unknown[];
             people?: {
               some?: {
                 status?: string;
@@ -531,6 +532,16 @@ function createWorld(options?: {
             where?.OR ?? (where?.people ? [{ people: where.people }] : []);
           if (clauses.length > 0) {
             const matches = clauses.some((clause) => {
+              if (clause.AND) {
+                // include_resolved: has people and none is PENDING.
+                const own = people.filter(
+                  (person) => person.request_id === row.request_id,
+                );
+                return (
+                  own.length > 0 &&
+                  own.every((person) => person.status !== 'PENDING')
+                );
+              }
               const some = clause.people?.some;
               if (!some) return false;
               return people.some((person) => {
@@ -957,6 +968,9 @@ function createWorld(options?: {
           where.user_id.in.map((id) => ({
             user_id: id,
             active: !deletedAccounts.has(id),
+            name: userNames.get(id) ?? null,
+            paternal_last_name: null,
+            maternal_last_name: null,
             users_roles: [{ user_role_id: 'role-pastor' }],
           })),
       ),
@@ -983,10 +997,21 @@ function createWorld(options?: {
         },
       ),
       findMany: jest.fn(
-        async ({ where }: { where: { user_id: string; active: boolean } }) => {
+        async ({
+          where,
+        }: {
+          where: {
+            user_id?: string;
+            districlub_type_id?: number;
+            active: boolean;
+          };
+        }) => {
           return pastors.filter(
             (row) =>
-              row.user_id === where.user_id && row.active === where.active,
+              (where.user_id === undefined || row.user_id === where.user_id) &&
+              (where.districlub_type_id === undefined ||
+                row.districlub_type_id === where.districlub_type_id) &&
+              row.active === where.active,
           );
         },
       ),
@@ -4279,6 +4304,71 @@ describe('investiture authorization requests', () => {
       });
     });
 
+    it('adds created_by, invested_count and rejected_count to the detail and the list', async () => {
+      world.setUserName(ACTOR, 'Pastor Uno');
+      const view = await present();
+      world.assignPastor();
+      world.people[0].status = 'INVESTED';
+
+      const detail = await service.readForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+      );
+
+      expect(detail.created_by).toEqual({
+        user_id: ACTOR,
+        name: 'Pastor Uno',
+      });
+      expect(detail.created_at).toBe('2026-10-01T12:00:00.000Z');
+      expect(detail.invested_count).toBe(1);
+      expect(detail.rejected_count).toBe(0);
+    });
+
+    it('include_resolved also lists fully resolved requests; the default does not', async () => {
+      const view = await present();
+      world.assignPastor();
+      world.people[0].status = 'REJECTED_BY_PERSON';
+
+      const byDefault = await service.listForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        YEAR_ID,
+      );
+      const withResolved = await service.listForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        YEAR_ID,
+        { includeResolved: true },
+      );
+
+      expect(byDefault).toHaveLength(0);
+      expect(withResolved.map((row) => row.request_id)).toEqual([
+        view.request_id,
+      ]);
+      expect(withResolved[0]).toMatchObject({
+        pending_count: 0,
+        invested_count: 0,
+        rejected_count: 1,
+      });
+    });
+
+    it('include_resolved keeps requests that still have PENDING people', async () => {
+      await twoClubs();
+      world.assignPastor();
+      world.people[0].status = 'INVESTED';
+
+      const listed = await service.listForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        YEAR_ID,
+        { includeResolved: true },
+      );
+
+      expect(listed).toHaveLength(2);
+      expect(listed.map((row) => row.invested_count).sort()).toEqual([0, 1]);
+    });
+
     it('reads the list in batch without per-request lookups', async () => {
       await twoClubs();
       world.assignPastor();
@@ -4358,6 +4448,71 @@ describe('investiture authorization requests', () => {
           pending_person_id: opened.people[0].person_id,
         }),
       ]);
+    });
+
+    it('adds missing_requirements_count for blocked candidates and null for eligible ones', async () => {
+      world.addMember(OTHER);
+      world.addEnrollment({ enrollment_id: 902, user_id: OTHER, class_id: 8 });
+      await present([902]);
+      eligibility.calculateForEnrollments.mockImplementation(
+        async (ids: number[]) =>
+          new Map(
+            ids.map((id) => [
+              id,
+              {
+                investiture_eligibility: { eligible: true },
+                overall_progress: 80,
+                status_counts: {
+                  validated: 2,
+                  submitted: 1,
+                  rejected: 0,
+                  pending: 2,
+                },
+              },
+            ]),
+          ),
+      );
+
+      const view = await context();
+
+      const byEnrollment = new Map(
+        view.candidates.map((row) => [row.enrollment_id, row]),
+      );
+      expect(byEnrollment.get(901)?.missing_requirements_count).toBeNull();
+      expect(byEnrollment.get(902)).toMatchObject({
+        eligible: false,
+        missing_requirements_count: 3,
+      });
+    });
+
+    it('lists the eligible pastors of the district sorted by name, and [] when none', async () => {
+      const PASTOR_B = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      const PASTOR_C = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+      const PASTOR_OTHER_DISTRICT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+      expect((await context()).authorizers).toEqual([]);
+
+      world.setUserName(PASTOR_B, 'Zacarías');
+      world.setUserName(PASTOR_C, 'Abel');
+      world.setUserName(PASTOR_OTHER_DISTRICT, 'Otro');
+      world.assignPastor(PASTOR_B, 3);
+      world.assignPastor(PASTOR_C, 3);
+      world.assignPastor(PASTOR_OTHER_DISTRICT, 9);
+
+      const view = await context();
+
+      expect(view.authorizers).toEqual([
+        { user_id: PASTOR_C, name: 'Abel' },
+        { user_id: PASTOR_B, name: 'Zacarías' },
+      ]);
+    });
+
+    it('omits pastors whose account was deleted from the authorizers', async () => {
+      const PASTOR_B = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      world.setUserName(PASTOR_B, 'Zacarías');
+      world.assignPastor(PASTOR_B, 3);
+      world.deleteAccount(PASTOR_B);
+
+      expect((await context()).authorizers).toEqual([]);
     });
 
     it('reports the window and still lists candidates when it is closed today', async () => {

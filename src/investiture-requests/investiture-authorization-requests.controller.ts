@@ -12,7 +12,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { JwtAuthGuard } from '../common/guards';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -224,11 +230,18 @@ export class InvestitureAuthorizationRequestsController {
   @Get('investiture-requests')
   @ApiOperation({
     summary:
-      'Solicitudes con pendientes que este pastor o Campo puede autorizar.',
+      'Solicitudes con pendientes que este pastor o Campo puede autorizar. Con include_resolved=true añade las del mismo alcance cuyas personas ya están todas resueltas. Cada item trae invested_count y rejected_count.',
+  })
+  @ApiQuery({
+    name: 'include_resolved',
+    required: false,
+    type: Boolean,
+    description: 'true para incluir solicitudes totalmente resueltas.',
   })
   async listForAuthorizer(
     @Request() req: AuthenticatedRequest,
     @Query('ecclesiastical_year_id', ParseIntPipe) ecclesiasticalYearId: number,
+    @Query('include_resolved') includeResolved?: string,
   ) {
     const profile = await this.authorizationContext.resolveUserAuthorization(
       req.user.sub,
@@ -237,6 +250,7 @@ export class InvestitureAuthorizationRequestsController {
       profile.authorization,
       req.user.sub,
       ecclesiasticalYearId,
+      { includeResolved: includeResolved === 'true' },
     );
     return { status: 'success', data };
   }

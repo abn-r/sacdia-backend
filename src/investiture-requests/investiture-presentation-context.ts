@@ -28,6 +28,11 @@ export type PresentationCandidate = {
   eligible: boolean;
   /** Blocking code when `eligible` is false. */
   blocked_code: PresentationBlockedCode | null;
+  /**
+   * Applicable requirements not yet VALIDATED for this enrollment. Null when
+   * the candidate is eligible.
+   */
+  missing_requirements_count: number | null;
   /** Set when the person is already PENDING in the section's open request. */
   pending_person_id: string | null;
 };
@@ -49,6 +54,11 @@ export type PresentationContextView = {
   year_open: boolean;
   /** The request holding PENDING people for this section and year, if any. */
   open_request_id: string | null;
+  /**
+   * Active, eligible investiture pastors of the section's district, sorted by
+   * name. Empty when the district has none.
+   */
+  authorizers: Array<{ user_id: string; name: string }>;
   candidates: PresentationCandidate[];
 };
 
