@@ -229,6 +229,49 @@ describe('ClassRequirementEligibilityService', () => {
     });
   });
 
+  it('returns status_counts over applicable requirements; missing progress counts as pending', async () => {
+    const base = {
+      required_for_investiture: true,
+      owner_division_id: null,
+      owner_union_id: null,
+      owner_local_field_id: null,
+    };
+    (mockPrisma.class_sections.findMany as jest.Mock).mockResolvedValue([
+      { ...base, section_id: 101, requirement_track: 'BASIC' },
+      { ...base, section_id: 102, requirement_track: 'BASIC' },
+      { ...base, section_id: 103, requirement_track: 'BASIC' },
+      { ...base, section_id: 104, requirement_track: 'BASIC' },
+      { ...base, section_id: 105, requirement_track: 'BASIC' },
+      // not applicable: advanced disabled / extra of another union
+      { ...base, section_id: 106, requirement_track: 'ADVANCED' },
+      {
+        ...base,
+        section_id: 107,
+        requirement_track: 'EXTRA',
+        owner_union_id: 99,
+      },
+    ]);
+    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue(
+      [
+        { section_id: 101, status: 'VALIDATED', score: 0 },
+        { section_id: 102, status: 'SUBMITTED', score: 0 },
+        { section_id: 103, status: 'REJECTED', score: 0 },
+        { section_id: 104, status: 'PENDING', score: 0 },
+        { section_id: 106, status: 'VALIDATED', score: 0 },
+        { section_id: 107, status: 'VALIDATED', score: 0 },
+      ],
+    );
+
+    const result = await service.calculateForEnrollment(10);
+
+    expect(result?.status_counts).toEqual({
+      validated: 1,
+      submitted: 1,
+      rejected: 1,
+      pending: 2,
+    });
+  });
+
   it('blocks investiture eligibility when extra requirements exist but institutional context is missing', async () => {
     (mockPrisma.club_role_assignments.findMany as jest.Mock).mockResolvedValue(
       [],

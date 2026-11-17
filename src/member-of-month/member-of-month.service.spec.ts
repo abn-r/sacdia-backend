@@ -500,3 +500,29 @@ describe('MemberOfMonthService notifications skip already-notified winners', () 
     expect(mockPrisma.member_of_month.updateMany).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('MemberOfMonthService candidate query', () => {
+  it('includes captain/secretary and excludes counselors', async () => {
+    const $queryRaw = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      $queryRaw,
+      member_of_month: { deleteMany: jest.fn() },
+    };
+    const service = new MemberOfMonthService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    await service.runEvaluation(10, 5, 2026);
+
+    const sql = ($queryRaw.mock.calls[0][0] as string[]).join('?');
+    expect(sql).toContain('captain_id');
+    expect(sql).toContain('secretary_id');
+    expect(sql).toContain('IS DISTINCT FROM u.advisor_id');
+    expect(sql).toContain('IS DISTINCT FROM u.substitute_advisor_id');
+  });
+});

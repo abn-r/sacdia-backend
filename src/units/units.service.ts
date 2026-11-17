@@ -64,6 +64,37 @@ interface WeeklyRecordRaw extends Omit<WeeklyRecordResponse, 'scores'> {
   }>;
 }
 
+export interface ScoringMemberResponse {
+  user_id: string;
+  name: string | null;
+  paternal_last_name: string | null;
+  maternal_last_name: string | null;
+  user_image: string | null;
+  unit_role: 'captain' | 'secretary' | 'member';
+}
+
+type ScoringUserShape = {
+  user_id: string;
+  name: string | null;
+  paternal_last_name: string | null;
+  maternal_last_name?: string | null;
+  user_image: string | null;
+};
+
+interface ScoringUnitShape {
+  captain_id: string | null;
+  secretary_id: string | null;
+  advisor_id: string | null;
+  substitute_advisor_id: string | null;
+  users_units_captain_idTousers?: ScoringUserShape | null;
+  users_units_secretary_idTousers?: ScoringUserShape | null;
+  unit_members: Array<{
+    user_id: string;
+    active: boolean;
+    users: ScoringUserShape;
+  }>;
+}
+
 @Injectable()
 export class UnitsService {
   private readonly logger = new Logger(UnitsService.name);
@@ -92,6 +123,7 @@ export class UnitsService {
         user_id: true,
         name: true,
         paternal_last_name: true,
+        maternal_last_name: true,
         user_image: true,
       },
     },
@@ -100,6 +132,7 @@ export class UnitsService {
         user_id: true,
         name: true,
         paternal_last_name: true,
+        maternal_last_name: true,
         user_image: true,
       },
     },
@@ -191,7 +224,7 @@ export class UnitsService {
       throw new AppNotFoundException(ErrorCode.UNIT_NOT_FOUND);
     }
 
-    return unit;
+    return { ...unit, scoring_members: this.buildScoringMembers(unit) };
   }
 
   async create(clubId: number, dto: CreateUnitDto) {
@@ -551,9 +584,7 @@ export class UnitsService {
   async findWeeklyRecords(unitId: number, clubId?: number) {
     const unit = await this.findOne(unitId, clubId);
 
-    const memberUserIds = unit.unit_members
-      .filter((m) => m.active)
-      .map((m) => m.user_id);
+    const memberUserIds = Array.from(this.scoringParticipantIds(unit));
 
     if (memberUserIds.length === 0) {
       return [];
@@ -584,9 +615,7 @@ export class UnitsService {
 
     const unit = await this.findOne(unitId, clubId);
 
-    const isMember = unit.unit_members.some(
-      (m) => m.user_id === dto.user_id && m.active,
-    );
+    const isMember = this.scoringParticipantIds(unit).has(dto.user_id);
 
     if (!isMember) {
       throw new AppBadRequestException(ErrorCode.UNIT_MEMBER_NOT_ACTIVE);
@@ -659,9 +688,7 @@ export class UnitsService {
     this.assertWeeklyRecordPeriodIsOpen(dto.week, dto.year);
 
     const unit = await this.findOne(unitId, clubId);
-    const activeMemberUserIds = new Set(
-      unit.unit_members.filter((m) => m.active).map((m) => m.user_id),
-    );
+    const activeMemberUserIds = this.scoringParticipantIds(unit);
     const seenUserIds = new Set<string>();
 
     const preparedRecords: Array<{
@@ -838,12 +865,10 @@ export class UnitsService {
       throw new AppForbiddenException(ErrorCode.UNIT_WEEKLY_RECORD_WRONG_UNIT);
     }
 
-    // C3: Verify the record belongs to an active member of this unit.
-    // Legacy records may have unit_id = null, so membership remains the fallback.
-    const isMemberOfUnit = await this.prisma.unit_members.findFirst({
-      where: { unit_id: unitId, user_id: record.user_id, active: true },
-    });
-    if (!isMemberOfUnit) {
+    // C3: Verify the record belongs to a scoring participant of this unit
+    // (active member, captain or secretary; never a counselor).
+    // Legacy records may have unit_id = null, so participation remains the fallback.
+    if (!this.scoringParticipantIds(unit).has(record.user_id)) {
       throw new AppForbiddenException(ErrorCode.UNIT_WEEKLY_RECORD_WRONG_UNIT);
     }
 
@@ -905,6 +930,71 @@ export class UnitsService {
   // ========================================
   // Helpers
   // ========================================
+
+  /**
+   * Users who can receive weekly points in a unit: active members plus the
+   * captain and secretary, minus the counselors (advisor / substitute advisor),
+   * who never score even if they are also listed as members.
+   */
+  private scoringParticipantIds(unit: ScoringUnitShape): Set<string> {
+    const ids = new Set<string>();
+    for (const m of unit.unit_members) {
+      if (m.active) ids.add(m.user_id);
+    }
+    if (unit.captain_id) ids.add(unit.captain_id);
+    if (unit.secretary_id) ids.add(unit.secretary_id);
+    if (unit.advisor_id) ids.delete(unit.advisor_id);
+    if (unit.substitute_advisor_id) ids.delete(unit.substitute_advisor_id);
+    return ids;
+  }
+
+  private buildScoringMembers(unit: ScoringUnitShape): ScoringMemberResponse[] {
+    const excluded = new Set(
+      [unit.advisor_id, unit.substitute_advisor_id].filter(
+        (id): id is string => !!id,
+      ),
+    );
+    const result: ScoringMemberResponse[] = [];
+    const seen = new Set<string>();
+    const push = (
+      u: {
+        user_id: string;
+        name: string | null;
+        paternal_last_name: string | null;
+        maternal_last_name?: string | null;
+        user_image: string | null;
+      } | null,
+      role: ScoringMemberResponse['unit_role'],
+    ) => {
+      if (!u || excluded.has(u.user_id) || seen.has(u.user_id)) return;
+      seen.add(u.user_id);
+      result.push({
+        user_id: u.user_id,
+        name: u.name,
+        paternal_last_name: u.paternal_last_name,
+        maternal_last_name: u.maternal_last_name ?? null,
+        user_image: u.user_image,
+        unit_role: role,
+      });
+    };
+
+    push(unit.users_units_captain_idTousers ?? null, 'captain');
+    // Unit position label in the API response, not an RBAC role.
+    // eslint-disable-next-line local/no-role-literals
+    push(unit.users_units_secretary_idTousers ?? null, 'secretary');
+
+    const members = unit.unit_members
+      .filter((m) => m.active && m.users)
+      .map((m) => m.users)
+      .sort((a, b) =>
+        `${a.name ?? ''} ${a.paternal_last_name ?? ''}`.localeCompare(
+          `${b.name ?? ''} ${b.paternal_last_name ?? ''}`,
+          'es',
+        ),
+      );
+    for (const u of members) push(u, 'member');
+    return result;
+  }
 
   private async validateSectionBelongsToClub(
     sectionId: number,

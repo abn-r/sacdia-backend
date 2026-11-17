@@ -79,6 +79,77 @@ describe('investiture history and yearbook', () => {
     expect(JSON.stringify(section[0])).not.toContain(PHRASE);
   });
 
+  it('adds resolved_by_name and resolved_at to resolved people only', async () => {
+    const at = new Date('2026-11-05T15:30:00.000Z');
+    const rows = [
+      {
+        ...closed,
+        person_id: 'p-invested',
+        status: 'INVESTED',
+        rejection_reason: null,
+        system_reason: null,
+        resolved_by_id: 'pastor-1',
+        modified_at: at,
+      },
+      {
+        ...closed,
+        person_id: 'p-rejected',
+        status: 'REJECTED_BY_PERSON',
+        resolved_by_id: 'pastor-1',
+        modified_at: at,
+      },
+      {
+        ...closed,
+        person_id: 'p-system',
+        status: 'REJECTED_BY_SYSTEM',
+        resolved_by_id: null,
+        modified_at: at,
+      },
+      { ...closed, person_id: 'p-closed', modified_at: at },
+    ];
+    const prisma = {
+      investiture_authorization_people: {
+        findMany: jest.fn().mockResolvedValue(rows),
+      },
+      users: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            user_id: 'pastor-1',
+            name: 'Samuel',
+            paternal_last_name: 'Cruz',
+            maternal_last_name: null,
+          },
+        ]),
+      },
+    };
+    const service = serviceWith(prisma);
+
+    const section = await service.sectionHistory(board(4), 4);
+    const own = await service.ownHistory('user-ana');
+
+    for (const list of [section, own]) {
+      const byId = new Map(list.map((entry) => [entry.person_id, entry]));
+      expect(byId.get('p-invested')).toMatchObject({
+        resolved_by_name: 'Samuel Cruz',
+        resolved_at: '2026-11-05T15:30:00.000Z',
+      });
+      expect(byId.get('p-rejected')).toMatchObject({
+        resolved_by_name: 'Samuel Cruz',
+        resolved_at: '2026-11-05T15:30:00.000Z',
+      });
+      expect(byId.get('p-system')).toMatchObject({
+        resolved_by_name: 'Sistema',
+        resolved_at: '2026-11-05T15:30:00.000Z',
+      });
+      expect(byId.get('p-closed')).toMatchObject({
+        resolved_by_name: null,
+        resolved_at: null,
+      });
+    }
+    // One batched lookup per history read.
+    expect(prisma.users.findMany).toHaveBeenCalledTimes(2);
+  });
+
   it('IA-61 shows the later certificate note on the person and section history', async () => {
     const note =
       'Investidura acreditada posteriormente mediante certificado validado';

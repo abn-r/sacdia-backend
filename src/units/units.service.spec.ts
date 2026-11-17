@@ -165,7 +165,7 @@ describe('UnitsService', () => {
 
       const result = await service.findOne(1);
 
-      expect(result).toEqual(mockUnit);
+      expect(result).toEqual({ ...mockUnit, scoring_members: [] });
     });
 
     it('should scope the unit lookup to the requested club when clubId is provided', async () => {
@@ -174,7 +174,7 @@ describe('UnitsService', () => {
 
       const result = await service.findOne(5, 1);
 
-      expect(result).toEqual(mockUnit);
+      expect(result).toEqual({ ...mockUnit, scoring_members: [] });
       expect(mockPrismaService.units.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -982,7 +982,10 @@ describe('UnitsService', () => {
 
   describe('updateWeeklyRecord', () => {
     it('should update a weekly record', async () => {
-      const mockUnit = { unit_id: 1, unit_members: [] };
+      const mockUnit = {
+        unit_id: 1,
+        unit_members: [{ user_id: 'uuid-user-1', active: true }],
+      };
       const mockRecord = {
         record_id: 10,
         user_id: 'uuid-user-1',
@@ -996,12 +999,6 @@ describe('UnitsService', () => {
 
       mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.weekly_records.findFirst.mockResolvedValue(mockRecord);
-      mockPrismaService.unit_members.findFirst.mockResolvedValue({
-        unit_member_id: 1,
-        unit_id: 1,
-        user_id: 'uuid-user-1',
-        active: true,
-      });
       mockPrismaService.weekly_records.update.mockResolvedValue({
         ...updated,
         weekly_record_scores: [],
@@ -1054,6 +1051,171 @@ describe('UnitsService', () => {
       });
 
       expect(mockPrismaService.unit_members.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  // ========================================
+  // Scoring participants (captain / secretary yes, counselors no)
+  // ========================================
+
+  describe('scoring participants', () => {
+    const period = {
+      week: currentScoringPeriod.week,
+      year: currentScoringPeriod.year,
+    };
+    const leaderUnit = {
+      unit_id: 1,
+      captain_id: 'cap',
+      secretary_id: 'sec',
+      advisor_id: 'adv',
+      substitute_advisor_id: 'sub',
+      unit_members: [
+        { user_id: 'm1', active: true },
+        { user_id: 'adv', active: true },
+        { user_id: 'old', active: false },
+      ],
+    };
+
+    it('findWeeklyRecords includes captain/secretary and excludes counselors', async () => {
+      mockPrismaService.units.findFirst.mockResolvedValue(leaderUnit);
+      mockPrismaService.weekly_records.findMany.mockResolvedValue([]);
+
+      await service.findWeeklyRecords(1);
+
+      expect(mockPrismaService.weekly_records.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: { in: ['m1', 'cap', 'sec'] },
+          }),
+        }),
+      );
+    });
+
+    it('createWeeklyRecord accepts a captain who is not in unit_members', async () => {
+      const rec = { record_id: 1, user_id: 'cap', ...period, points: 0 };
+      mockPrismaService.units.findFirst.mockResolvedValue(leaderUnit);
+      mockPrismaService.weekly_records.findFirst.mockResolvedValueOnce(null);
+      mockPrismaService.weekly_records.create.mockResolvedValue(rec);
+      mockPrismaService.weekly_records.findUnique.mockResolvedValueOnce(rec);
+
+      await expect(
+        service.createWeeklyRecord(1, { user_id: 'cap', ...period }, 'actor'),
+      ).resolves.toBeDefined();
+    });
+
+    it('createWeeklyRecord rejects a counselor even if listed as member', async () => {
+      mockPrismaService.units.findFirst.mockResolvedValue(leaderUnit);
+
+      await expect(
+        service.createWeeklyRecord(1, { user_id: 'adv', ...period }, 'actor'),
+      ).rejects.toMatchObject({ code: ErrorCode.UNIT_MEMBER_NOT_ACTIVE });
+      await expect(
+        service.createWeeklyRecord(1, { user_id: 'sub', ...period }, 'actor'),
+      ).rejects.toMatchObject({ code: ErrorCode.UNIT_MEMBER_NOT_ACTIVE });
+    });
+
+    it('bulkUpsertWeeklyRecords accepts the secretary and rejects a counselor', async () => {
+      mockPrismaService.units.findFirst.mockResolvedValue(leaderUnit);
+
+      await expect(
+        service.bulkUpsertWeeklyRecords(
+          1,
+          { ...period, records: [{ user_id: 'adv' }] },
+          'actor',
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.UNIT_MEMBER_NOT_ACTIVE });
+
+      const rec = { record_id: 5, user_id: 'sec', ...period };
+      mockPrismaService.$transaction.mockImplementation(
+        async (cb: (tx: unknown) => unknown) =>
+          cb({
+            weekly_records: {
+              upsert: jest.fn().mockResolvedValue(rec),
+              findMany: jest
+                .fn()
+                .mockResolvedValue([{ ...rec, weekly_record_scores: [] }]),
+            },
+          }),
+      );
+
+      const result = await service.bulkUpsertWeeklyRecords(
+        1,
+        { ...period, records: [{ user_id: 'sec' }] },
+        'actor',
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it('updateWeeklyRecord allows a captain record and rejects a counselor record', async () => {
+      const base = { week: period.week, year: period.year, unit_id: 1 };
+      mockPrismaService.units.findFirst.mockResolvedValue(leaderUnit);
+      mockPrismaService.weekly_records.findFirst.mockResolvedValueOnce({
+        record_id: 10,
+        user_id: 'adv',
+        ...base,
+      });
+      await expect(
+        service.updateWeeklyRecord(1, 10, { attendance: 1 }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.UNIT_WEEKLY_RECORD_WRONG_UNIT,
+      });
+
+      mockPrismaService.weekly_records.findFirst.mockResolvedValueOnce({
+        record_id: 11,
+        user_id: 'cap',
+        ...base,
+      });
+      mockPrismaService.$transaction.mockImplementation(
+        async (cb: (tx: unknown) => unknown) => cb(mockPrismaService),
+      );
+      mockPrismaService.weekly_records.update.mockResolvedValue({
+        record_id: 11,
+        user_id: 'cap',
+        weekly_record_scores: [],
+      });
+      await expect(
+        service.updateWeeklyRecord(1, 11, { attendance: 1 }),
+      ).resolves.toBeDefined();
+    });
+
+    it('findOne exposes scoring_members ordered, deduped, without counselors', async () => {
+      const u = (id: string, name: string) => ({
+        user_id: id,
+        name,
+        paternal_last_name: 'X',
+        maternal_last_name: null,
+        user_image: null,
+      });
+      mockPrismaService.units.findFirst.mockResolvedValue({
+        ...leaderUnit,
+        users_units_captain_idTousers: u('cap', 'Cap'),
+        users_units_secretary_idTousers: u('sec', 'Sec'),
+        unit_members: [
+          { user_id: 'z', active: true, users: u('z', 'Zoe') },
+          { user_id: 'cap', active: true, users: u('cap', 'Cap') },
+          { user_id: 'adv', active: true, users: u('adv', 'Adv') },
+          { user_id: 'a', active: true, users: u('a', 'Ana') },
+        ],
+      });
+
+      const result = await service.findOne(1);
+
+      expect(
+        result.scoring_members.map((m) => [m.user_id, m.unit_role]),
+      ).toEqual([
+        ['cap', 'captain'],
+        ['sec', 'secretary'],
+        ['a', 'member'],
+        ['z', 'member'],
+      ]);
+      expect(result.scoring_members[0]).toEqual({
+        user_id: 'cap',
+        name: 'Cap',
+        paternal_last_name: 'X',
+        maternal_last_name: null,
+        user_image: null,
+        unit_role: 'captain',
+      });
     });
   });
 });

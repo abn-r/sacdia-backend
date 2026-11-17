@@ -393,6 +393,8 @@
   "CLASS_COUNSELOR_ASSIGNMENT_DUPLICATE": "The user is already assigned to this class in the indicated section and year",
   "CLASS_COUNSELOR_CLASS_LIMIT_REACHED": "The class already reached the maximum of 3 active responsible people",
   "CLASS_COUNSELOR_PRIMARY_EXISTS": "The class already has an active primary responsible person",
+  "CLASS_COUNSELOR_ASSISTANT_EXISTS": "The class already has an active assistant",
+  "CLASS_EVIDENCE_MAX_FILES_REACHED": "The class requirement already has the maximum number of evidence files",
   "CLASS_COUNSELOR_EXCEPTION_REQUIRED": "A second assigned class requires an exception flag and reason",
   "CLASS_COUNSELOR_USER_LIMIT_REACHED": "The user already reached the maximum of 2 active assigned classes",
   "CLASS_COUNSELOR_INVALID_RESPONSIBILITY_TYPE": "Invalid class responsibility type",

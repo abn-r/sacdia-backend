@@ -381,12 +381,21 @@ export class MemberOfMonthService {
     // (avoids correlated NOT EXISTS). Filter uses idx_weekly_records_user_year_week.
     const scores = await this.prisma.$queryRaw<MemberResult[]>`
       WITH scoped_members AS (
-        SELECT um.user_id, u.unit_id
-        FROM unit_members um
-        JOIN units u ON um.unit_id = u.unit_id
+        -- Scoring participants: active members + captain + secretary,
+        -- never the counselors (advisor / substitute advisor).
+        SELECT DISTINCT p.user_id, u.unit_id
+        FROM (
+          SELECT um.user_id, um.unit_id FROM unit_members um WHERE um.active = true
+          UNION
+          SELECT cu.captain_id, cu.unit_id FROM units cu WHERE cu.captain_id IS NOT NULL
+          UNION
+          SELECT su.secretary_id, su.unit_id FROM units su WHERE su.secretary_id IS NOT NULL
+        ) p
+        JOIN units u ON p.unit_id = u.unit_id
           AND u.club_section_id = ${sectionId}
           AND u.active = true
-        WHERE um.active = true
+        WHERE p.user_id IS DISTINCT FROM u.advisor_id
+          AND p.user_id IS DISTINCT FROM u.substitute_advisor_id
       ),
       preferred_records AS (
         SELECT DISTINCT ON (sm.user_id, sm.unit_id, wr.week)

@@ -95,6 +95,74 @@ describe('ClassProgressScopeService', () => {
       { class_id: 1, name: 'Lección 1', club_type_id: 2, active: true },
       { class_id: 2, name: 'Lección 2', club_type_id: 2, active: true },
     ]);
+    mockPrisma.enrollments.findMany.mockResolvedValue([
+      { enrollment_id: 11, class_id: 1 },
+      { enrollment_id: 12, class_id: 1 },
+      { enrollment_id: 13, class_id: 1 },
+    ]);
+    mockEligibility.calculateForEnrollments.mockResolvedValue(
+      new Map([
+        [
+          11,
+          {
+            overall_progress: 50,
+            status_counts: {
+              validated: 2,
+              submitted: 1,
+              rejected: 0,
+              pending: 1,
+            },
+          },
+        ],
+        [
+          12,
+          {
+            overall_progress: 25,
+            status_counts: {
+              validated: 1,
+              submitted: 0,
+              rejected: 1,
+              pending: 2,
+            },
+          },
+        ],
+        [
+          13,
+          {
+            overall_progress: 0,
+            status_counts: {
+              validated: 0,
+              submitted: 0,
+              rejected: 0,
+              pending: 4,
+            },
+          },
+        ],
+      ]),
+    );
+    // Counselor-only users have no club_roles:read: names come from users.
+    mockPrisma.class_counselor_assignments.findMany.mockResolvedValue([
+      {
+        class_id: 1,
+        user_id: 'c-1',
+        responsibility_type: 'primary',
+        users: {
+          name: 'Ana',
+          paternal_last_name: 'López',
+          maternal_last_name: null,
+        },
+      },
+      {
+        class_id: 1,
+        user_id: 'a-1',
+        responsibility_type: 'assistant',
+        users: {
+          name: 'Luis',
+          paternal_last_name: 'Paz',
+          maternal_last_name: 'Ruiz',
+        },
+      },
+    ]);
 
     await expect(
       service.getProgressScope({
@@ -113,12 +181,32 @@ describe('ClassProgressScopeService', () => {
           name: 'Lección 1',
           club_type_id: 2,
           access_level: 'section',
+          members_count: 3,
+          avg_progress: 25,
+          status_counts: {
+            validated: 3,
+            submitted: 1,
+            rejected: 1,
+            pending: 7,
+          },
+          counselor: { user_id: 'c-1', name: 'Ana López' },
+          assistant: { user_id: 'a-1', name: 'Luis Paz Ruiz' },
         },
         {
           class_id: 2,
           name: 'Lección 2',
           club_type_id: 2,
           access_level: 'section',
+          members_count: 0,
+          avg_progress: 0,
+          status_counts: {
+            validated: 0,
+            submitted: 0,
+            rejected: 0,
+            pending: 0,
+          },
+          counselor: null,
+          assistant: null,
         },
       ],
     });
@@ -135,9 +223,12 @@ describe('ClassProgressScopeService', () => {
       },
       orderBy: [{ display_order: 'asc' }, { class_id: 'asc' }],
     });
+    // Batched: one enrollments query, one eligibility call, one counselors query.
+    expect(mockPrisma.enrollments.findMany).toHaveBeenCalledTimes(1);
+    expect(mockEligibility.calculateForEnrollments).toHaveBeenCalledTimes(1);
     expect(
       mockPrisma.class_counselor_assignments.findMany,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('returns section-wide classes when the coordinator owns that section', async () => {
@@ -151,6 +242,9 @@ describe('ClassProgressScopeService', () => {
     mockPrisma.classes.findMany.mockResolvedValue([
       { class_id: 1, name: 'Lección 1', club_type_id: 2, active: true },
     ]);
+    mockPrisma.enrollments.findMany.mockResolvedValue([]);
+    mockPrisma.class_counselor_assignments.findMany.mockResolvedValue([]);
+    mockEligibility.calculateForEnrollments.mockResolvedValue(new Map());
 
     await expect(
       service.getProgressScope({
@@ -166,9 +260,6 @@ describe('ClassProgressScopeService', () => {
     expect(
       mockCoordinationService.getEffectiveCoordinatorSectionIds,
     ).toHaveBeenCalledWith('coordinator-1');
-    expect(
-      mockPrisma.class_counselor_assignments.findMany,
-    ).not.toHaveBeenCalled();
   });
 
   it('returns only assigned active classes when the actor does not hold section-wide access', async () => {
@@ -202,6 +293,8 @@ describe('ClassProgressScopeService', () => {
         },
       },
     ]);
+    mockPrisma.enrollments.findMany.mockResolvedValue([]);
+    mockEligibility.calculateForEnrollments.mockResolvedValue(new Map());
 
     await expect(
       service.getProgressScope({
@@ -221,13 +314,23 @@ describe('ClassProgressScopeService', () => {
           name: 'Ruta 1',
           club_type_id: 2,
           access_level: 'assigned',
+          members_count: 0,
+          avg_progress: 0,
+          status_counts: {
+            validated: 0,
+            submitted: 0,
+            rejected: 0,
+            pending: 0,
+          },
+          counselor: null,
+          assistant: null,
         },
       ],
     });
 
     expect(
       mockPrisma.class_counselor_assignments.findMany,
-    ).toHaveBeenCalledWith({
+    ).toHaveBeenNthCalledWith(1, {
       where: {
         user_id: 'actor-2',
         club_section_id: 10,
@@ -327,6 +430,7 @@ describe('ClassProgressScopeService', () => {
           {
             investiture_progress: { completed: number; total: number };
             overall_progress: number;
+            status_counts: Record<string, number>;
           }
         >();
         for (const enrollmentId of enrollmentIds) {
@@ -336,6 +440,10 @@ describe('ClassProgressScopeService', () => {
               total: 4,
             },
             overall_progress: enrollmentId === 101 ? 25 : 50,
+            status_counts:
+              enrollmentId === 101
+                ? { validated: 1, submitted: 0, rejected: 0, pending: 3 }
+                : { validated: 2, submitted: 1, rejected: 1, pending: 0 },
           });
         }
         return summaries;
@@ -368,6 +476,12 @@ describe('ClassProgressScopeService', () => {
           completed_sections: 1,
           total_sections: 4,
           overall_progress: 25,
+          status_counts: {
+            validated: 1,
+            submitted: 0,
+            rejected: 0,
+            pending: 3,
+          },
         },
         {
           user_id: 'user-2',
@@ -380,8 +494,20 @@ describe('ClassProgressScopeService', () => {
           completed_sections: 2,
           total_sections: 4,
           overall_progress: 50,
+          status_counts: {
+            validated: 2,
+            submitted: 1,
+            rejected: 1,
+            pending: 0,
+          },
         },
       ],
+      summary: {
+        avg_progress: 38,
+        status_counts: { validated: 3, submitted: 1, rejected: 1, pending: 3 },
+      },
+      counselor: null,
+      assistant: null,
     });
 
     expect(mockEligibility.calculateForEnrollments).toHaveBeenCalledTimes(1);
