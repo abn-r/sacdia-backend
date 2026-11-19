@@ -418,9 +418,9 @@ export class ActivitiesController {
   @RequirePermissions('attendance:manage')
   @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({
-    summary: 'Miembros de la sección para confirmar asistencia virtual',
+    summary: 'Miembros de la sección para confirmar asistencia',
     description:
-      'Incluye a todos los miembros activos de las secciones de la actividad, hayan marcado o no su intención.',
+      'Incluye a todos los miembros activos de las secciones de la actividad (presencial, virtual o híbrida), hayan marcado o no su intención. La intención (rsvp) solo existe en actividades virtuales.',
   })
   @ApiParam({ name: 'activityId', type: Number })
   async getAttendanceRoster(

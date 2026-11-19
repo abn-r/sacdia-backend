@@ -939,6 +939,40 @@ describe('ActivitiesService', () => {
         confirmed: false,
       });
     });
+
+    it('lists the roster of an in-person activity with no rsvp', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue({
+        ...virtualActivity,
+        platform: 0,
+        rsvp: null,
+        attendees: ['user-going'],
+      });
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 9,
+      });
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        {
+          user_id: 'user-going',
+          users: {
+            user_id: 'user-going',
+            name: 'Luis',
+            paternal_last_name: 'Paz',
+            maternal_last_name: null,
+            user_image: null,
+          },
+        },
+      ]);
+
+      const result = await service.getAttendanceRoster(4);
+
+      expect(result.members).toEqual([
+        expect.objectContaining({
+          user_id: 'user-going',
+          rsvp: null,
+          confirmed: true,
+        }),
+      ]);
+    });
   });
 
   describe('getAttendance', () => {
