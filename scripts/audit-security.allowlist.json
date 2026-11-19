@@ -1,11 +1,3 @@
 {
-  "accepted": [
-    {
-      "github_advisory_id": "GHSA-fc5q-39xc-vjpf",
-      "module": "picomatch",
-      "via": "nestjs-i18n > chokidar (runtime); @nestjs/cli, @types/jest (dev)",
-      "reason": "No patched release exists. The ReDoS needs an attacker-controlled glob; every glob here is static config (i18n file watcher, CLI, Jest), never request input. Re-check when picomatch ships a fix.",
-      "review_by": "2026-12-31"
-    }
-  ]
+  "accepted": []
 }

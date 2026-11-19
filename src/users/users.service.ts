@@ -25,6 +25,7 @@ import { ageToday, parseCalendarDate } from '../common/age/age.util';
 import type { AuthPrincipal } from '../auth/acting-for/auth-principal';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 @Injectable()
 export class UsersService {
@@ -37,7 +38,24 @@ export class UsersService {
     private readonly fileStorage: FileStorageService,
     private readonly countryAgePolicy: CountryAgePolicyService,
     private readonly actingForCache: ActingForCache,
+    private readonly authorizationContext: AuthorizationContextService,
   ) {}
+
+  /**
+   * `/auth/me` builds the profile (name, gender, dates, photo) from the
+   * cached authorization context (5 min). Drop it after a profile write so the
+   * next `/auth/me` returns the new values instead of the cached ones.
+   */
+  private async invalidateCachedProfile(userId: string): Promise<void> {
+    try {
+      await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    } catch (error) {
+      this.logger.warn(
+        `Could not invalidate cached profile for user ${userId}`,
+        error,
+      );
+    }
+  }
 
   private async ensureUserExists(userId: string) {
     const user = await this.prisma.users.findUnique({
@@ -433,6 +451,8 @@ export class UsersService {
         updatedUser.country_id,
       );
     }
+
+    await this.invalidateCachedProfile(userId);
 
     this.logger.log(`User updated: ${userId}`);
 
@@ -960,6 +980,8 @@ export class UsersService {
       );
     }
 
+    await this.invalidateCachedProfile(userId);
+
     // Fire-and-forget: do NOT await — old-file cleanup must not block the
     // response or risk rolling back an already-committed DB row.
     // Failures are logged at WARN level for manual sweeps.
@@ -1022,6 +1044,8 @@ export class UsersService {
         ErrorCode.USER_IMAGE_DELETE_FAILED,
       );
     }
+
+    await this.invalidateCachedProfile(userId);
 
     if (fileKey) {
       try {
