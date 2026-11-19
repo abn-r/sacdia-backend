@@ -3,6 +3,7 @@ import { validate } from 'class-validator';
 import {
   CreateActivityDto,
   CreateActivitySeriesDto,
+  RecordAttendanceDto,
   UpdateActivityDto,
 } from './activities.dto';
 
@@ -129,5 +130,26 @@ describe('activity DTO activity_date validation', () => {
         dateConstraints(UpdateActivityDto, { activity_date: '2026-11-06' }),
       ).resolves.toEqual([]);
     });
+  });
+});
+
+describe('RecordAttendanceDto', () => {
+  async function errorsFor(user_ids: unknown) {
+    const dto = plainToInstance(RecordAttendanceDto, { user_ids });
+    return validate(dto);
+  }
+
+  it('accepts user ids of any UUID version (seeded users use v5)', async () => {
+    await expect(
+      errorsFor([
+        '16de2271-e15c-588c-8049-a2276e4be9bc',
+        '11111111-1111-4111-8111-111111111111',
+      ]),
+    ).resolves.toHaveLength(0);
+  });
+
+  it('rejects values that are not UUIDs', async () => {
+    const errors = await errorsFor(['not-a-uuid']);
+    expect(errors[0]?.constraints).toHaveProperty('isUuid');
   });
 });

@@ -395,7 +395,7 @@ export class ExtendActivitySeriesDto {
 export class RecordAttendanceDto {
   @ApiProperty({ description: 'Lista de IDs de usuarios que asistieron' })
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   declare user_ids: string[];
 }
 

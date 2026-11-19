@@ -992,8 +992,9 @@ export class ActivitiesService {
   }
 
   async getAttendanceRoster(activityId: number) {
+    // Any platform: in-person activities use the roster to mark attendance
+    // by hand. RSVP is only collected for virtual activities, so it stays null.
     const activity = await this.loadRsvpActivity(activityId);
-    this.assertVirtualActivity(activity.platform);
     const sectionIds = this.sectionIdsFromActivity(activity);
     const yearId = await this.currentEcclesiasticalYearId();
     if (!yearId || sectionIds.length === 0) {
