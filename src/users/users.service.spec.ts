@@ -9,6 +9,7 @@ import {
 import { SeverityLevel } from './dto/update-user-medical.dto';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -97,6 +98,10 @@ describe('UsersService', () => {
     bump: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockAuthorizationContext = {
+    invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
+  };
+
   const mockFileStorageService = {
     upload: jest.fn().mockResolvedValue({
       key: 'photo-u1-123.jpeg',
@@ -135,6 +140,10 @@ describe('UsersService', () => {
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
         { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
         { provide: ActingForCache, useValue: mockActingForCache },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContext,
+        },
       ],
     }).compile();
 
@@ -611,6 +620,9 @@ describe('UsersService', () => {
       );
       expect(result.status).toBe('success');
       expect(result.data.url).toContain('https://cdn.r2.example/');
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith('u1');
     });
 
     it('should abort DB update when R2 upload fails', async () => {
@@ -709,6 +721,9 @@ describe('UsersService', () => {
         status: 'success',
         message: 'Foto de perfil eliminada exitosamente',
       });
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith('u1');
     });
 
     it('should restore DB value when R2 deletion fails', async () => {
@@ -942,6 +957,10 @@ describe('UsersService', () => {
       );
       expect(result.status).toBe('success');
       expect(result.message).toBe('Usuario actualizado exitosamente');
+      // /auth/me serves the profile from the cached authorization context.
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith('u1');
     });
 
     describe('date-only inputs (QA BUG-4)', () => {
