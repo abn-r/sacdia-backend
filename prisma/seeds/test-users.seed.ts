@@ -343,6 +343,21 @@ async function upsertUserWithCredentials(opts: {
   return { user_id: user.user_id };
 }
 
+/**
+ * Every real account gets the GLOBAL `user` base role when it signs up
+ * (auth.service, social sign-in, guardianships). Its grants — e.g.
+ * `resource_categories:read` on `type: 'global'` routes — only count as
+ * global permissions, so seeded users need it too or they 403 where a real
+ * user would not.
+ */
+async function ensureBaseUserRole(userId: string, baseRoleId: string): Promise<void> {
+  await prisma.users_roles.upsert({
+    where: { user_id_role_id: { user_id: userId, role_id: baseRoleId } },
+    create: { user_id: userId, role_id: baseRoleId },
+    update: {},
+  });
+}
+
 // ---------- Main ----------
 
 async function main() {
@@ -360,6 +375,7 @@ async function main() {
     throw new Error(`Ecclesiastical year ${YEAR_ID} not found in DB`);
   }
   const assignmentStartDate = new Date(year.start_date);
+  const baseUserRoleId = await resolveRoleId('user', 'GLOBAL');
   console.log(
     `Active ecclesiastical year: ${YEAR_ID} (start: ${assignmentStartDate.toISOString().slice(0, 10)})\n`,
   );
@@ -386,6 +402,7 @@ async function main() {
     });
 
     globalUserIds.set(spec.email, user_id);
+    await ensureBaseUserRole(user_id, baseUserRoleId);
 
     // Upsert users_roles (global role assignment)
     await prisma.users_roles.upsert({
@@ -440,6 +457,7 @@ async function main() {
       unionId: UNION_ID,
       accessPanel: false, // club users only use the mobile app
     });
+    await ensureBaseUserRole(user_id, baseUserRoleId);
 
     // A director keeps the section it currently holds this year (idempotent
     // re-runs); otherwise it takes a section with a vacant director slot. An
