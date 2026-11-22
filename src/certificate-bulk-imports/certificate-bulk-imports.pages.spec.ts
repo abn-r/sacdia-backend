@@ -24,7 +24,10 @@ describe('CertificateBulkImportsService source file and page (B4)', () => {
       updateMany: jest.fn(),
     },
     certificate_bulk_import_item_events: { create: jest.fn() },
-    honors: { findUnique: jest.fn() },
+    honors: {
+      findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
   const prisma = {
     certificate_bulk_import_batches: tx.certificate_bulk_import_batches,
@@ -58,6 +61,7 @@ describe('CertificateBulkImportsService source file and page (B4)', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    tx.honors.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(
       async (cb: (client: typeof tx) => unknown) => cb(tx),
     );

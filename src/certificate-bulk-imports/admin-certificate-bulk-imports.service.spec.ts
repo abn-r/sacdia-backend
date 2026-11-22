@@ -671,6 +671,7 @@ describe('AdminCertificateBulkImportsService', () => {
       expect(detail.items[0].honor).toEqual({
         honor_id: 12,
         name: 'Primeros Auxilios',
+        honor_image: null,
         category: { honor_category_id: 3, name: 'Salud' },
       });
       expect(detail.items[1].class).toEqual({

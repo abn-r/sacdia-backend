@@ -22,7 +22,10 @@ describe('CertificateBulkImportsService catalog and date range (B1)', () => {
       updateMany: jest.fn(),
     },
     certificate_bulk_import_item_events: { create: jest.fn() },
-    honors: { findUnique: jest.fn() },
+    honors: {
+      findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     classes: { findUnique: jest.fn(), findMany: jest.fn() },
   };
   const prisma = {
