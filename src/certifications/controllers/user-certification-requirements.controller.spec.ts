@@ -18,6 +18,7 @@ const ENROLLMENT_BASE = 'users/:userId/certification-enrollments/:enrollmentId';
 
 const makeServiceMock = () => ({
   getRequirement: jest.fn(),
+  getActivityOptions: jest.fn(),
   saveDraft: jest.fn(),
   submitRequirement: jest.fn(),
 });
@@ -72,6 +73,13 @@ describe('UserCertificationRequirementsController', () => {
       expect(methodOf(controller.getRequirement)).toBe(RequestMethod.GET);
     });
 
+    it('getActivityOptions is GET .../requirements/:requirementId/components/:componentId/activity-options', () => {
+      expect(routeOf(controller.getActivityOptions)).toBe(
+        `${ENROLLMENT_BASE}/requirements/:requirementId/components/:componentId/activity-options`,
+      );
+      expect(methodOf(controller.getActivityOptions)).toBe(RequestMethod.GET);
+    });
+
     it('saveDraft is PATCH .../requirements/:requirementId/draft', () => {
       expect(routeOf(controller.saveDraft)).toBe(
         `${ENROLLMENT_BASE}/requirements/:requirementId/draft`,
@@ -120,6 +128,40 @@ describe('UserCertificationRequirementsController', () => {
         controller.getRequirement,
       );
       expect(permissions.permissions).toContain('user_certifications:read');
+    });
+
+    it('getActivityOptions is owner-scoped and requires read permission', () => {
+      expect(
+        reflector.get(
+          AUTHORIZATION_RESOURCE_KEY,
+          controller.getActivityOptions,
+        ),
+      ).toEqual({ type: 'user', ownerParam: 'userId' });
+      const permissions = reflector.get(
+        PERMISSIONS_KEY,
+        controller.getActivityOptions,
+      );
+      expect(permissions.permissions).toContain('user_certifications:read');
+    });
+
+    it('getActivityOptions delegates to the service and wraps the response', async () => {
+      service.getActivityOptions.mockResolvedValue([{ activity_id: 1 }]);
+      const result = await controller.getActivityOptions(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+        200,
+      );
+      expect(service.getActivityOptions).toHaveBeenCalledWith(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+        200,
+      );
+      expect(result).toEqual({
+        status: 'success',
+        data: [{ activity_id: 1 }],
+      });
     });
 
     it('saveDraft is owner-scoped to the userId param and requires manage permission', () => {

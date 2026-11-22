@@ -1226,4 +1226,132 @@ describe('CertificationsService', () => {
       expect(txMock.users_certifications.updateMany).toHaveBeenCalled();
     });
   });
+
+  // ==========================================================================
+  // Member views: status + summary
+  // ==========================================================================
+
+  describe('member views status/summary', () => {
+    it('getUserCertifications adds status, certified_at and summary with a single grouped progress query', async () => {
+      mockPrisma.users_certifications.findMany.mockResolvedValue([
+        {
+          enrollment_id: ENROLLMENT_ID,
+          certification_id: CERT_ID,
+          enrollment_date: new Date('2026-01-01'),
+          completion_status: false,
+          active: true,
+          status: 'IN_PROGRESS',
+          certified_at: null,
+          certifications: {
+            name: 'Guía Mayor Pro',
+            certification_modules: [
+              {
+                module_id: MODULE_ID,
+                certification_sections: [
+                  { section_id: 1, required: true },
+                  { section_id: 2, required: true },
+                  { section_id: 3, required: true },
+                  { section_id: 4, required: true },
+                  { section_id: 5, required: false },
+                ],
+              },
+            ],
+          },
+        },
+      ]);
+      mockPrisma.certification_module_progress.count.mockResolvedValue(0);
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue([
+        { enrollment_id: ENROLLMENT_ID, section_id: 1, status: 'APPROVED' },
+        { enrollment_id: ENROLLMENT_ID, section_id: 2, status: 'SUBMITTED' },
+        {
+          enrollment_id: ENROLLMENT_ID,
+          section_id: 3,
+          status: 'CHANGES_REQUESTED',
+        },
+        { enrollment_id: ENROLLMENT_ID, section_id: 5, status: 'APPROVED' },
+      ]);
+
+      const result = await service.getUserCertifications(USER_ID);
+
+      expect(
+        mockPrisma.certification_section_progress.findMany,
+      ).toHaveBeenCalledTimes(1);
+      expect(result[0].status).toBe('IN_PROGRESS');
+      expect(result[0].certified_at).toBeNull();
+      expect(result[0].summary).toEqual({
+        total: 4,
+        approved: 1,
+        submitted: 1,
+        changes_requested: 1,
+        not_started_or_draft: 1,
+      });
+    });
+
+    it('getCertificationProgress adds per-section status and root summary', async () => {
+      const certifiedAt = new Date('2026-06-01');
+      mockPrisma.users_certifications.findFirst.mockResolvedValue({
+        ...baseEnrollment,
+        status: 'CERTIFIED',
+        certified_at: certifiedAt,
+        certification_version_id: 7,
+        certifications: {
+          name: 'Guía Mayor Pro',
+          certification_modules: [
+            {
+              module_id: MODULE_ID,
+              name: 'Módulo 1',
+              certification_sections: [
+                { section_id: 1, name: 'S1', required: true },
+                { section_id: 2, name: 'S2', required: true },
+                { section_id: 3, name: 'S3', required: false },
+              ],
+            },
+          ],
+        },
+      });
+      mockPrisma.certification_module_progress.findMany.mockResolvedValue([]);
+      const submittedAt = new Date('2026-02-01');
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue([
+        {
+          section_id: 1,
+          status: 'APPROVED',
+          completed: false,
+          completion_date: null,
+          submitted_at: submittedAt,
+          reviewed_at: certifiedAt,
+          last_review_comment: 'Bien',
+        },
+      ]);
+
+      const result = await service.getCertificationProgress(USER_ID, CERT_ID);
+
+      expect(result.status).toBe('CERTIFIED');
+      expect(result.certified_at).toBe(certifiedAt);
+      expect(result.summary).toEqual({
+        total: 2,
+        approved: 1,
+        submitted: 0,
+        changes_requested: 0,
+        not_started_or_draft: 1,
+      });
+      const [s1, s2, s3] = result.modules[0].sections;
+      expect(s1).toMatchObject({
+        status: 'APPROVED',
+        submitted_at: submittedAt,
+        reviewed_at: certifiedAt,
+        last_review_comment: 'Bien',
+        required: true,
+        completed: true,
+      });
+      expect(s2).toMatchObject({
+        status: 'NOT_STARTED',
+        submitted_at: null,
+        reviewed_at: null,
+        last_review_comment: null,
+        required: true,
+      });
+      expect(s3.required).toBe(false);
+      expect(result.completion_status).toBe(false);
+    });
+  });
 });

@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CertificationRequirementsService } from './certification-requirements.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../../common/services/file-storage.service';
 import { ErrorCode } from '../../common/errors/error-codes';
 import type { SaveRequirementDraftDto } from '../dto/save-requirement-draft.dto';
 import type { SubmitRequirementDto } from '../dto/submit-requirement.dto';
@@ -71,6 +75,7 @@ const sectionWithHonor = {
 // ---------------------------------------------------------------------------
 
 const createTxMock = () => ({
+  $queryRaw: jest.fn(),
   users_certifications: {
     findFirst: jest.fn(),
     update: jest.fn(),
@@ -100,8 +105,11 @@ const createTxMock = () => ({
 
 type TxMock = ReturnType<typeof createTxMock>;
 
+const mockFileStorage = { getSignedDownloadUrl: jest.fn() };
+
 const mockPrisma = {
   $transaction: jest.fn(),
+  $queryRaw: jest.fn(),
   users_certifications: {
     findFirst: jest.fn(),
   },
@@ -119,6 +127,9 @@ describe('CertificationRequirementsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockFileStorage.getSignedDownloadUrl.mockResolvedValue(
+      'https://signed.example/file',
+    );
     txMock = createTxMock();
 
     mockPrisma.$transaction.mockImplementation((arg: unknown) => {
@@ -132,6 +143,7 @@ describe('CertificationRequirementsService', () => {
       providers: [
         CertificationRequirementsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorage },
       ],
     }).compile();
 
@@ -1015,6 +1027,327 @@ describe('CertificationRequirementsService', () => {
           responses: [{ component_id: TEXT_COMPONENT_ID, text_value: 'x' }],
         }),
       ).resolves.toMatchObject({ section_id: SECTION_ID });
+    });
+  });
+
+  // ==========================================================================
+  // Member views: evidences, activity options, linked activity validation
+  // ==========================================================================
+
+  describe('getRequirement - evidences and extra fields', () => {
+    it('signs confirmed evidences (900 s) and returns [] for components without them', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(
+        baseEnrollment,
+      );
+      mockPrisma.certification_sections.findFirst.mockResolvedValue({
+        ...baseSection,
+        description: 'Desc sección',
+        certification_requirement_components: [
+          {
+            component_id: 210,
+            component_type: 'FILE_EVIDENCE',
+            label: 'Archivo',
+            required: true,
+            instructions: 'Sube un PDF',
+            configuration: { max_files: 3 },
+          },
+          baseSection.certification_requirement_components[0],
+        ],
+      });
+      const confirmedAt = new Date('2026-03-01T10:00:00Z');
+      mockPrisma.certification_section_progress.findFirst.mockResolvedValue({
+        progress_id: 1,
+        status: 'DRAFT',
+        submitted_at: null,
+        reviewed_at: null,
+        last_review_comment: null,
+        certification_component_responses: [
+          {
+            component_id: 210,
+            text_value: null,
+            attestation_confirmed: null,
+            linked_user_honor_id: null,
+            linked_activity_id: null,
+            certification_evidences: [
+              {
+                evidence_id: 9,
+                object_key: 'k/9.pdf',
+                original_filename: 'a.pdf',
+                mime_type: 'application/pdf',
+                size_bytes: BigInt(1234),
+                confirmed_at: confirmedAt,
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.getRequirement(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+      );
+
+      // The participant needs the current lock_version to submit.
+      expect(result.lock_version).toBe(0);
+      expect(mockFileStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
+        StorageBucketAlias.CERTIFICATION_EVIDENCE,
+        'k/9.pdf',
+        { expiresInSeconds: 900 },
+      );
+      expect(result.description).toBe('Desc sección');
+      const file = result.components.find((c) => c.component_id === 210);
+      expect(file?.instructions).toBe('Sube un PDF');
+      expect(file?.configuration).toEqual({ max_files: 3 });
+      expect(file?.evidences).toEqual([
+        {
+          evidence_id: 9,
+          original_filename: 'a.pdf',
+          mime_type: 'application/pdf',
+          size_bytes: 1234,
+          confirmed_at: confirmedAt,
+          url: 'https://signed.example/file',
+          expires_in: 900,
+        },
+      ]);
+      const text = result.components.find(
+        (c) => c.component_id === TEXT_COMPONENT_ID,
+      );
+      expect(text?.evidences).toEqual([]);
+      expect(text?.configuration).toEqual({});
+    });
+  });
+
+  describe('getActivityOptions', () => {
+    const ACTIVITY_COMPONENT_ID = 220;
+    const sectionWithActivity = {
+      ...baseSection,
+      certification_requirement_components: [
+        ...baseSection.certification_requirement_components,
+        {
+          component_id: ACTIVITY_COMPONENT_ID,
+          component_type: 'LINKED_ACTIVITY',
+          label: 'Actividad',
+          required: true,
+          activity_type_id: null,
+        },
+      ],
+    };
+
+    const queryText = () => {
+      const sql = mockPrisma.$queryRaw.mock.calls[0][0] as {
+        sql: string;
+        values: unknown[];
+      };
+      return sql;
+    };
+
+    it('rejects enrollments not owned by the user', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getActivityOptions(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          ACTIVITY_COMPONENT_ID,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('rejects a component that is not LINKED_ACTIVITY', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(
+        baseEnrollment,
+      );
+      mockPrisma.certification_sections.findFirst.mockResolvedValue(
+        sectionWithActivity,
+      );
+
+      await expect(
+        service.getActivityOptions(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          TEXT_COMPONENT_ID,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_SECTION_INVALID });
+    });
+
+    it('rejects a component outside the section', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(
+        baseEnrollment,
+      );
+      mockPrisma.certification_sections.findFirst.mockResolvedValue(
+        sectionWithActivity,
+      );
+
+      await expect(
+        service.getActivityOptions(USER_ID, ENROLLMENT_ID, SECTION_ID, 9999),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_SECTION_INVALID });
+    });
+
+    it('returns attended activities without type filter when component has none', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(
+        baseEnrollment,
+      );
+      mockPrisma.certification_sections.findFirst.mockResolvedValue(
+        sectionWithActivity,
+      );
+      const rows = [
+        {
+          activity_id: 1,
+          name: 'Campamento',
+          activity_date: new Date('2026-05-01'),
+          activity_type_name: 'Campamento',
+          club_name: 'Club Orión',
+        },
+      ];
+      mockPrisma.$queryRaw.mockResolvedValue(rows);
+
+      const result = await service.getActivityOptions(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+        ACTIVITY_COMPONENT_ID,
+      );
+
+      expect(result).toEqual(rows);
+      const q = queryText();
+      expect(q.sql).not.toContain('a.activity_type_id =');
+      expect(q.values).toContain(USER_ID);
+      expect(q.values).toContain(50);
+    });
+
+    it('filters by activity_type_id when the component defines one', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(
+        baseEnrollment,
+      );
+      mockPrisma.certification_sections.findFirst.mockResolvedValue({
+        ...sectionWithActivity,
+        certification_requirement_components: [
+          {
+            component_id: ACTIVITY_COMPONENT_ID,
+            component_type: 'LINKED_ACTIVITY',
+            label: 'Actividad',
+            required: true,
+            activity_type_id: 7,
+          },
+        ],
+      });
+      mockPrisma.$queryRaw.mockResolvedValue([]);
+
+      await service.getActivityOptions(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+        ACTIVITY_COMPONENT_ID,
+      );
+
+      const q = queryText();
+      expect(q.sql).toContain('a.activity_type_id =');
+      expect(q.values).toContain(7);
+    });
+  });
+
+  describe('linked activity attendance validation', () => {
+    const ACTIVITY_COMPONENT_ID = 220;
+    const sectionWithActivity = {
+      ...baseSection,
+      certification_requirement_components: [
+        {
+          component_id: ACTIVITY_COMPONENT_ID,
+          component_type: 'LINKED_ACTIVITY',
+          label: 'Actividad',
+          required: true,
+          activity_type_id: null,
+        },
+      ],
+    };
+
+    it('saveDraft rejects an activity the user did not attend', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(baseEnrollment);
+      txMock.certification_sections.findFirst.mockResolvedValue(
+        sectionWithActivity,
+      );
+      txMock.certification_section_progress.findFirst.mockResolvedValue({
+        progress_id: 1,
+        status: 'DRAFT',
+      });
+      txMock.$queryRaw.mockResolvedValue([]);
+
+      await expect(
+        service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
+          responses: [
+            { component_id: ACTIVITY_COMPONENT_ID, linked_activity_id: 55 },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE,
+        response: {
+          namedArgs: expect.objectContaining({
+            reason: 'linked_activity_not_attended',
+          }),
+        },
+      });
+      expect(
+        txMock.certification_component_responses.upsert,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('saveDraft accepts an attended activity', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(baseEnrollment);
+      txMock.certification_sections.findFirst.mockResolvedValue(
+        sectionWithActivity,
+      );
+      txMock.certification_section_progress.findFirst.mockResolvedValue({
+        progress_id: 1,
+        status: 'DRAFT',
+      });
+      txMock.$queryRaw.mockResolvedValue([{ activity_id: 55 }]);
+      txMock.certification_component_responses.upsert.mockResolvedValue({});
+      txMock.certification_component_responses.findMany.mockResolvedValue([]);
+
+      await service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
+        responses: [
+          { component_id: ACTIVITY_COMPONENT_ID, linked_activity_id: 55 },
+        ],
+      });
+
+      expect(
+        txMock.certification_component_responses.upsert,
+      ).toHaveBeenCalled();
+    });
+
+    it('submitRequirement rejects a stored activity the user did not attend', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(
+        inProgressEnrollment,
+      );
+      txMock.certification_sections.findFirst.mockResolvedValue(
+        sectionWithActivity,
+      );
+      txMock.certification_section_progress.findFirst.mockResolvedValue({
+        progress_id: 1,
+        status: 'DRAFT',
+        certification_component_responses: [
+          { component_id: ACTIVITY_COMPONENT_ID, linked_activity_id: 55 },
+        ],
+      });
+      txMock.$queryRaw.mockResolvedValue([]);
+
+      await expect(
+        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, {
+          lock_version: 0,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE,
+        response: {
+          namedArgs: expect.objectContaining({
+            reason: 'linked_activity_not_attended',
+          }),
+        },
+      });
+      expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
     });
   });
 });

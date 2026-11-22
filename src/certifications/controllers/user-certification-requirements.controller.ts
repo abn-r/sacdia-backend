@@ -73,6 +73,52 @@ export class UserCertificationRequirementsController {
     return { status: 'success', data };
   }
 
+  @Get(
+    'users/:userId/certification-enrollments/:enrollmentId/requirements/:requirementId/components/:componentId/activity-options',
+  )
+  @RequirePermissions('user_certifications:read')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiOperation({
+    summary: 'Listar actividades elegibles para un componente LINKED_ACTIVITY',
+    description:
+      'Devuelve hasta 50 actividades activas en las que el usuario asistió, ordenadas por fecha descendente. Si el componente define un tipo de actividad, solo se devuelven actividades de ese tipo.',
+  })
+  @ApiParam({ name: 'userId', description: 'UUID del usuario' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
+  @ApiParam({
+    name: 'requirementId',
+    description: 'ID del requisito (sección)',
+  })
+  @ApiParam({ name: 'componentId', description: 'ID del componente' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de actividades: activity_id, name, activity_date, activity_type_name, club_name',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'El componente no pertenece al requisito o no es LINKED_ACTIVITY (CERT_SECTION_INVALID)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Inscripción no encontrada o no pertenece al usuario',
+  })
+  async getActivityOptions(
+    @Param('userId', ParseUuidParamPipe) userId: string,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
+    @Param('requirementId', ParseIntPipe) requirementId: number,
+    @Param('componentId', ParseIntPipe) componentId: number,
+  ) {
+    const data = await this.requirementsService.getActivityOptions(
+      userId,
+      enrollmentId,
+      requirementId,
+      componentId,
+    );
+    return { status: 'success', data };
+  }
+
   @Patch(
     'users/:userId/certification-enrollments/:enrollmentId/requirements/:requirementId/draft',
   )

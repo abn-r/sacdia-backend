@@ -22,6 +22,49 @@ import {
   transitionEnrollment,
 } from './domain/certification-state-machine';
 
+export type CertificationSectionsSummary = {
+  total: number;
+  approved: number;
+  submitted: number;
+  changes_requested: number;
+  not_started_or_draft: number;
+};
+
+/**
+ * Cuenta solo las secciones requeridas por estado de revisión. Una sección sin
+ * fila de progreso cuenta como not_started_or_draft.
+ */
+function summarizeRequiredSections(
+  sections: { section_id: number; required: boolean }[],
+  statusBySection: Map<number, string> | undefined,
+): CertificationSectionsSummary {
+  const summary: CertificationSectionsSummary = {
+    total: 0,
+    approved: 0,
+    submitted: 0,
+    changes_requested: 0,
+    not_started_or_draft: 0,
+  };
+  for (const section of sections) {
+    if (!section.required) continue;
+    summary.total += 1;
+    switch (statusBySection?.get(section.section_id)) {
+      case 'APPROVED':
+        summary.approved += 1;
+        break;
+      case 'SUBMITTED':
+        summary.submitted += 1;
+        break;
+      case 'CHANGES_REQUESTED':
+        summary.changes_requested += 1;
+        break;
+      default:
+        summary.not_started_or_draft += 1;
+    }
+  }
+  return summary;
+}
+
 @Injectable()
 export class CertificationsService {
   constructor(
@@ -280,6 +323,9 @@ export class CertificationsService {
             certification_modules: {
               select: {
                 module_id: true,
+                certification_sections: {
+                  select: { section_id: true, required: true },
+                },
               },
             },
           },
@@ -287,6 +333,25 @@ export class CertificationsService {
       },
       orderBy: { enrollment_date: 'desc' },
     });
+
+    // Una sola consulta para el estado de secciones de todas las inscripciones.
+    const progressRows =
+      enrollments.length > 0
+        ? ((await this.prisma.certification_section_progress.findMany({
+            where: {
+              enrollment_id: { in: enrollments.map((e) => e.enrollment_id) },
+            },
+            select: { enrollment_id: true, section_id: true, status: true },
+          })) ?? [])
+        : [];
+    const statusByEnrollment = new Map<number, Map<number, string>>();
+    for (const row of progressRows) {
+      if (row.enrollment_id === null) continue;
+      const bySection =
+        statusByEnrollment.get(row.enrollment_id) ?? new Map<number, string>();
+      bySection.set(row.section_id, row.status);
+      statusByEnrollment.set(row.enrollment_id, bySection);
+    }
 
     // Calcular progreso para cada enrollment
     return Promise.all(
@@ -319,6 +384,14 @@ export class CertificationsService {
           },
           enrollment_date: enrollment.enrollment_date,
           completion_status: enrollment.completion_status,
+          status: enrollment.status,
+          certified_at: enrollment.certified_at ?? null,
+          summary: summarizeRequiredSections(
+            enrollment.certifications.certification_modules.flatMap(
+              (m) => m.certification_sections ?? [],
+            ),
+            statusByEnrollment.get(enrollment.enrollment_id),
+          ),
           progress_percentage: Math.round(progressPercentage * 10) / 10,
           modules_completed: completedModules,
           modules_total: modulesTotal,
@@ -411,6 +484,12 @@ export class CertificationsService {
               ? sectionProgressData?.status === 'APPROVED'
               : (sectionProgressData?.completed ?? false),
             completion_date: sectionProgressData?.completion_date ?? null,
+            status: sectionProgressData?.status ?? 'NOT_STARTED',
+            submitted_at: sectionProgressData?.submitted_at ?? null,
+            reviewed_at: sectionProgressData?.reviewed_at ?? null,
+            last_review_comment:
+              sectionProgressData?.last_review_comment ?? null,
+            required: section.required ?? true,
           };
         });
 
@@ -435,6 +514,17 @@ export class CertificationsService {
       certification_name: enrollment.certifications.name,
       progress_percentage: Math.round(progressPercentage * 10) / 10,
       completion_status: enrollment.completion_status,
+      status: enrollment.status,
+      certified_at: enrollment.certified_at ?? null,
+      summary: summarizeRequiredSections(
+        enrollment.certifications.certification_modules.flatMap((m) =>
+          m.certification_sections.map((s) => ({
+            section_id: s.section_id,
+            required: s.required ?? true,
+          })),
+        ),
+        new Map(sectionProgress.map((sp) => [sp.section_id, sp.status])),
+      ),
       enrollment_date: enrollment.enrollment_date,
       modules,
     };
