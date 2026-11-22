@@ -24,7 +24,10 @@ describe('CertificateBulkImportsService instructor (B2)', () => {
       updateMany: jest.fn(),
     },
     certificate_bulk_import_item_events: { create: jest.fn() },
-    honors: { findUnique: jest.fn() },
+    honors: {
+      findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     classes: { findUnique: jest.fn() },
   };
   const prisma = {

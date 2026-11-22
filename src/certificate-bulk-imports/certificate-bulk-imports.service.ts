@@ -48,6 +48,13 @@ import {
   isCertificateAuthorizationPending,
   rejectSameYearLiveAuthorization,
 } from './class-certificate-live-authorization';
+import {
+  AUTO_MATCH_READY_DATE_CONFIDENCE,
+  HONOR_AUTO_MATCH_KEY,
+  buildHonorNameIndex,
+  isAutoMatchedFieldConfidence,
+  matchHonorId,
+} from './certificate-import-honor-match';
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 import {
   catalogItemInclude,
@@ -64,6 +71,9 @@ type InstructorFields = {
   instructor_user_id: string | null;
   instructor_name: string | null;
 };
+/** La respuesta del miembro expone `honor_suggested`; la del admin no. */
+const MEMBER_ITEM_OPTIONS = { honorSuggested: true } as const;
+
 const NO_INSTRUCTOR: InstructorFields = {
   instructor_user_id: null,
   instructor_name: null,
@@ -161,7 +171,12 @@ export class CertificateBulkImportsService {
 
       // Un borrador nuevo nunca pidió OCR: sin consulta a Redis.
       return withOcrState(
-        toPublicImportBatch(batch, this.translations.getCurrentLocale()),
+        toPublicImportBatch(
+          batch,
+          this.translations.getCurrentLocale(),
+          undefined,
+          MEMBER_ITEM_OPTIONS,
+        ),
         OCR_NEVER_REQUESTED,
       );
     });
@@ -284,6 +299,7 @@ export class CertificateBulkImportsService {
           revision: true,
           instructor_user_id: true,
           instructor_name: true,
+          field_confidence: true,
         },
       });
       // Solo se descartan las filas que el miembro todavía no tocó: un reproceso
@@ -291,8 +307,14 @@ export class CertificateBulkImportsService {
       const disposableIds = existing
         .filter(
           (item) =>
-            item.status === 'NEEDS_REVIEW' &&
-            !item.honor_id &&
+            // Una especialidad puesta por el auto-match sin edición del miembro
+            // sigue siendo descartable (también si quedó lista); una elegida
+            // por él, no.
+            (item.status === 'NEEDS_REVIEW' ||
+              (item.status === 'READY' &&
+                isAutoMatchedFieldConfidence(item.field_confidence))) &&
+            (!item.honor_id ||
+              isAutoMatchedFieldConfidence(item.field_confidence)) &&
             !item.class_id &&
             !item.instructor_user_id &&
             !item.instructor_name &&
@@ -307,6 +329,19 @@ export class CertificateBulkImportsService {
       }
 
       if (ocrResult.items.length > 0) {
+        // Catálogo que ofrece el selector del miembro (GET /honors: activos).
+        // Una sola consulta por corrida de OCR.
+        const needsHonorMatch = ocrResult.items.some(
+          (item) => item.type === CertificateBulkImportItemType.HONOR,
+        );
+        const honorIndex = buildHonorNameIndex(
+          needsHonorMatch
+            ? await tx.honors.findMany({
+                where: { active: true },
+                select: { honor_id: true, name: true },
+              })
+            : [],
+        );
         // Solo se guarda un archivo de origen que sigue siendo del lote; la página
         // no tiene sentido sin su archivo (D4, D12).
         const readableIds = new Set(readable.map((file) => file.file_id));
@@ -316,7 +351,22 @@ export class CertificateBulkImportsService {
               item.sourceFileId && readableIds.has(item.sourceFileId)
                 ? item.sourceFileId
                 : null;
+            const honorId =
+              item.type === CertificateBulkImportItemType.HONOR
+                ? matchHonorId(honorIndex, item.detectedName)
+                : null;
+            const fieldConfidence = honorId
+              ? { ...item.fieldConfidence, [HONOR_AUTO_MATCH_KEY]: 1 }
+              : item.fieldConfidence;
+            // Especialidad exacta y fecha leída con confianza: la fila llega
+            // lista; con fecha dudosa espera a que el miembro la confirme.
+            const autoReady =
+              honorId !== null &&
+              !!item.completedAt &&
+              (item.fieldConfidence.date ?? 0) >=
+                AUTO_MATCH_READY_DATE_CONFIDENCE;
             return {
+              ...(honorId ? { honor_id: honorId } : {}),
               source_file_id: sourceFileId,
               source_page: sourceFileId ? (item.sourcePage ?? null) : null,
               batch_id: batch.batch_id,
@@ -325,8 +375,10 @@ export class CertificateBulkImportsService {
               detected_date: this.toDate(item.detectedDate ?? item.completedAt),
               completed_at: this.toDate(item.completedAt),
               ocr_confidence: item.confidence,
-              field_confidence: this.toInputJson(item.fieldConfidence),
-              status: CertificateBulkImportItemStatus.NEEDS_REVIEW,
+              field_confidence: this.toInputJson(fieldConfidence),
+              status: autoReady
+                ? CertificateBulkImportItemStatus.READY
+                : CertificateBulkImportItemStatus.NEEDS_REVIEW,
             };
           }),
         });
@@ -394,6 +446,7 @@ export class CertificateBulkImportsService {
         batch,
         this.translations.getCurrentLocale(),
         await this.instructorPhotos(batch.items),
+        MEMBER_ITEM_OPTIONS,
       ),
       await resolveOcrState(this.ocrQueue, batchId, batch.events, this.logger),
     );
@@ -622,6 +675,7 @@ export class CertificateBulkImportsService {
         submittedBatch,
         this.translations.getCurrentLocale(),
         await this.instructorPhotos(submittedBatch.items),
+        MEMBER_ITEM_OPTIONS,
       ),
       await resolveOcrState(
         this.ocrQueue,
@@ -1376,6 +1430,7 @@ export class CertificateBulkImportsService {
       item,
       this.translations.getCurrentLocale(),
       await this.instructorPhotos([item]),
+      MEMBER_ITEM_OPTIONS,
     );
   }
 

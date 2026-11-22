@@ -12,6 +12,7 @@
  * change unrelated modules and hide the next BigInt column.
  */
 
+import { isAutoMatchedFieldConfidence } from './certificate-import-honor-match';
 import { TranslationService } from '../common/services/translation.service';
 import {
   instructorUserSelect,
@@ -73,12 +74,15 @@ export function toPublicImportBatch<T extends { files?: FileRowLike[] }>(
   batch: T,
   locale = 'es',
   photoUrls?: ReadonlyMap<string, string | null>,
+  options?: PublicImportItemOptions,
 ): PublicImportBatch<T> {
   const items = (batch as { items?: object[] }).items;
   // Las filas sin `honor`/`class`/`instructor` cargados no se tocan (misma referencia).
-  const hasCatalog = items?.some(
-    (item) => 'honor' in item || 'class' in item || 'instructor' in item,
-  );
+  const hasCatalog =
+    (options?.honorSuggested && !!items?.length) ||
+    items?.some(
+      (item) => 'honor' in item || 'class' in item || 'instructor' in item,
+    );
   if (batch.files === undefined && !hasCatalog) {
     return batch as unknown as PublicImportBatch<T>;
   }
@@ -90,7 +94,7 @@ export function toPublicImportBatch<T extends { files?: FileRowLike[] }>(
     ...(hasCatalog && items
       ? {
           items: items.map((item) =>
-            toPublicImportItem(item, locale, photoUrls),
+            toPublicImportItem(item, locale, photoUrls, options),
           ),
         }
       : {}),
@@ -108,6 +112,8 @@ type CatalogName = {
 export type PublicHonorRef = {
   honor_id: number;
   name: string;
+  /** Insignia tal como la guarda `honors.honor_image` (misma forma que `GET /honors`). */
+  honor_image: string | null;
   category: { honor_category_id: number; name: string } | null;
 };
 
@@ -116,6 +122,11 @@ export type PublicClassRef = {
   name: string;
   asset_code: string | null;
   club_type: { club_type_id: number; name: string } | null;
+};
+
+export type PublicImportItemOptions = {
+  /** Solo la respuesta del miembro agrega `honor_suggested`. */
+  honorSuggested?: boolean;
 };
 
 export type PublicImportItem<I> = Omit<I, 'honor' | 'class' | 'instructor'> &
@@ -164,6 +175,7 @@ export function catalogItemInclude(locale = 'es', withInstructorPhoto = false) {
       select: {
         honor_id: true,
         name: true,
+        honor_image: true,
         translations,
         honors_categories: {
           select: { honor_category_id: true, name: true, translations },
@@ -193,9 +205,16 @@ export function toPublicImportItem<I extends object>(
   item: I,
   locale = 'es',
   photoUrls?: ReadonlyMap<string, string | null>,
+  options?: PublicImportItemOptions,
 ): PublicImportItem<I> {
   const row = item as Record<string, unknown>;
   const out: Record<string, unknown> = { ...row };
+  if (options?.honorSuggested) {
+    // `honor_suggested`: el backend eligió la especialidad y el miembro aún no
+    // editó la fila (revision 0).
+    out.honor_suggested =
+      isAutoMatchedFieldConfidence(row.field_confidence) && row.revision === 0;
+  }
   if ('instructor' in row) {
     out.instructor = toInstructorView(row, photoUrls);
   }
@@ -203,6 +222,7 @@ export function toPublicImportItem<I extends object>(
     const honor = row.honor as
       | (CatalogName & {
           honor_id: number;
+          honor_image?: string | null;
           honors_categories?:
             (CatalogName & { honor_category_id: number }) | null;
         })
@@ -212,6 +232,7 @@ export function toPublicImportItem<I extends object>(
       ? {
           honor_id: honor.honor_id,
           name: localizedName(honor, locale),
+          honor_image: honor.honor_image ?? null,
           category: honor.honors_categories
             ? {
                 honor_category_id: honor.honors_categories.honor_category_id,

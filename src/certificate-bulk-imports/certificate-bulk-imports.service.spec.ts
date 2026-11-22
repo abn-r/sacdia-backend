@@ -24,7 +24,10 @@ describe('CertificateBulkImportsService', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
-    honors: { findUnique: jest.fn() },
+    honors: {
+      findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     classes: { findUnique: jest.fn() },
     users: { findUnique: jest.fn() },
     ecclesiastical_years: { findMany: jest.fn() },

@@ -73,6 +73,7 @@ describe('certificate import response mapper', () => {
       honor: {
         honor_id: 12,
         name: 'Primeros Auxilios',
+        honor_image: 'honors/primeros-auxilios.png',
         translations: [{ locale: 'en', name: 'First Aid' }],
         honors_categories: {
           honor_category_id: 3,
@@ -103,6 +104,7 @@ describe('certificate import response mapper', () => {
       expect(toPublicImportItem(honorRow).honor).toEqual({
         honor_id: 12,
         name: 'Primeros Auxilios',
+        honor_image: 'honors/primeros-auxilios.png',
         category: { honor_category_id: 3, name: 'Salud' },
       });
     });
@@ -111,6 +113,7 @@ describe('certificate import response mapper', () => {
       expect(toPublicImportItem(honorRow, 'en').honor).toEqual({
         honor_id: 12,
         name: 'First Aid',
+        honor_image: 'honors/primeros-auxilios.png',
         category: { honor_category_id: 3, name: 'Health' },
       });
     });
@@ -364,6 +367,54 @@ describe('certificate import response mapper', () => {
       withOcrState(source, status('done'));
 
       expect(source).not.toHaveProperty('ocr_state');
+    });
+  });
+
+  describe('honor_suggested', () => {
+    const item = (revision: number, field_confidence: unknown) => ({
+      item_id: 'i1',
+      revision,
+      field_confidence,
+      honor: null,
+    });
+
+    it('is true for an auto-matched row the member has not edited', () => {
+      const out = toPublicImportItem(
+        item(0, { name: 0.9, honor_auto_match: 1 }),
+        'es',
+        undefined,
+        { honorSuggested: true },
+      ) as unknown as { honor_suggested: boolean };
+
+      expect(out.honor_suggested).toBe(true);
+    });
+
+    it('is false once edited, without the marker, or with no confidence', () => {
+      const flag = (i: object) =>
+        (
+          toPublicImportItem(i, 'es', undefined, {
+            honorSuggested: true,
+          }) as unknown as { honor_suggested: boolean }
+        ).honor_suggested;
+
+      expect(flag(item(1, { honor_auto_match: 1 }))).toBe(false);
+      expect(flag(item(0, { name: 0.9 }))).toBe(false);
+      expect(flag(item(0, null))).toBe(false);
+    });
+
+    it('is added to every batch item for the member and omitted for admin', () => {
+      const batch = {
+        files: [],
+        items: [item(0, { honor_auto_match: 1 })],
+      };
+
+      const member = toPublicImportBatch(batch, 'es', undefined, {
+        honorSuggested: true,
+      });
+      expect(member.items[0]).toHaveProperty('honor_suggested', true);
+      expect(
+        toPublicImportItem(item(0, { honor_auto_match: 1 })),
+      ).not.toHaveProperty('honor_suggested');
     });
   });
 });
