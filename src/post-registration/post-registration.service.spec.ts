@@ -13,6 +13,7 @@ import {
 } from '../common/errors/app.exception';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
+import { OnboardingModeService } from './onboarding/onboarding-mode.service';
 
 // Territory of the club behind section 10: country 1 > union 2 > field 3.
 const sectionClub = {
@@ -116,6 +117,7 @@ describe('PostRegistrationService', () => {
     users_pr: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
     },
@@ -138,7 +140,38 @@ describe('PostRegistrationService', () => {
 
   const mockAuthorizationContextService = {
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
+    resolveUserAuthorization: jest.fn(),
   };
+
+  /** Minimal fully resolved profile: global roles and visible club grants. */
+  const profileWith = (
+    globalRoles: string[],
+    clubAssignments: unknown[] = [],
+  ) => ({
+    authorization: {
+      grants: {
+        global_roles: globalRoles.map((role_name) => ({
+          role_name,
+          permissions: [],
+          scope: {},
+        })),
+        club_assignments: clubAssignments,
+        direct_permissions: [],
+      },
+      active_assignment: { assignment_id: null },
+      effective: { permissions: [], scope: { global: {}, club: null } },
+    },
+    legacy: { roles: globalRoles },
+  });
+  const visibleClub = [{ assignment_id: 'a-1', status: 'active' }];
+  const asMode = (mode: 'club' | 'club_exempt' | 'panel_only') =>
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+      mode === 'club'
+        ? profileWith(['user'], visibleClub)
+        : mode === 'club_exempt'
+          ? profileWith(['pastor'])
+          : profileWith(['director-union']),
+    );
 
   const mockRoleEligibility = {
     assertAssignment: jest.fn(),
@@ -175,6 +208,10 @@ describe('PostRegistrationService', () => {
       count: 1,
     });
     mockPrismaService.users.findUnique.mockReset();
+    mockPrismaService.users_pr.updateMany
+      .mockReset()
+      .mockResolvedValue({ count: 0 });
+    asMode('club');
 
     mockPrismaService.$transaction.mockImplementation(
       (
@@ -188,6 +225,7 @@ describe('PostRegistrationService', () => {
       providers: [
         PostRegistrationService,
         PostRegistrationRowService,
+        OnboardingModeService,
         ClassAssignmentResolverService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
@@ -271,7 +309,166 @@ describe('PostRegistrationService', () => {
             clubSelection: false,
           },
           dateCompleted: null,
+          onboarding_mode: 'club',
         },
+      });
+    });
+
+    describe('onboarding mode', () => {
+      const row = (overrides: Record<string, unknown> = {}) => ({
+        user_id: 'target-user-1',
+        complete: false,
+        profile_picture_complete: false,
+        personal_info_complete: false,
+        club_selection_complete: false,
+        date_completed: null,
+        ...overrides,
+      });
+
+      it('S2.8 club: nextStep goes 1 -> 2 -> 3 -> null', async () => {
+        asMode('club');
+        const steps: Array<[Record<string, unknown>, string | null]> = [
+          [{}, 'profilePicture'],
+          [{ profile_picture_complete: true }, 'personalInfo'],
+          [
+            { profile_picture_complete: true, personal_info_complete: true },
+            'clubSelection',
+          ],
+          [
+            {
+              profile_picture_complete: true,
+              personal_info_complete: true,
+              club_selection_complete: true,
+            },
+            null,
+          ],
+        ];
+        for (const [overrides, expected] of steps) {
+          mockPrismaService.users_pr.findUnique.mockResolvedValue(
+            row(overrides),
+          );
+          const result = await service.getStatus('target-user-1', ownerActor);
+          expect(result.data).toMatchObject({
+            nextStep: expected,
+            onboarding_mode: 'club',
+          });
+        }
+        expect(mockPrismaService.users_pr.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('S2.9 club_exempt: nextStep goes profilePicture -> personalInfo -> null', async () => {
+        asMode('club_exempt');
+        mockPrismaService.users_pr.findUnique.mockResolvedValue(row());
+        expect(
+          (await service.getStatus('target-user-1', ownerActor)).data,
+        ).toMatchObject({
+          nextStep: 'profilePicture',
+          onboarding_mode: 'club_exempt',
+        });
+
+        mockPrismaService.users_pr.findUnique.mockResolvedValue(
+          row({ profile_picture_complete: true }),
+        );
+        expect(
+          (await service.getStatus('target-user-1', ownerActor)).data,
+        ).toMatchObject({ nextStep: 'personalInfo' });
+
+        mockPrismaService.users_pr.findUnique.mockResolvedValue(
+          row({
+            profile_picture_complete: true,
+            personal_info_complete: true,
+            complete: true,
+          }),
+        );
+        expect(
+          (await service.getStatus('target-user-1', ownerActor)).data,
+        ).toMatchObject({ nextStep: null, complete: true });
+      });
+
+      it('S2.10 panel_only: nextStep null and complete keeps the stored value', async () => {
+        asMode('panel_only');
+        mockPrismaService.users_pr.findUnique.mockResolvedValue(row());
+
+        const result = await service.getStatus('target-user-1', ownerActor);
+
+        expect(result.data).toMatchObject({
+          nextStep: null,
+          complete: false,
+          onboarding_mode: 'panel_only',
+        });
+        expect(mockPrismaService.users_pr.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('S1.9 a plain user with no club gets club and the three steps', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          profileWith(['user']),
+        );
+        mockPrismaService.users_pr.findUnique.mockResolvedValue(
+          row({ profile_picture_complete: true, personal_info_complete: true }),
+        );
+
+        const result = await service.getStatus('target-user-1', ownerActor);
+
+        expect(result.data).toMatchObject({
+          nextStep: 'clubSelection',
+          onboarding_mode: 'club',
+        });
+      });
+
+      it('S2.7 reconcile flips complete once, invalidates caches, and a second read changes nothing', async () => {
+        asMode('club_exempt');
+        const done = row({
+          profile_picture_complete: true,
+          personal_info_complete: true,
+        });
+        mockPrismaService.users_pr.findUnique
+          .mockResolvedValueOnce(done)
+          .mockResolvedValueOnce({ ...done, complete: true })
+          .mockResolvedValue({ ...done, complete: true });
+        mockPrismaService.users_pr.updateMany
+          .mockResolvedValueOnce({ count: 1 })
+          .mockResolvedValue({ count: 0 });
+
+        const first = await service.getStatus('target-user-1', ownerActor);
+        const second = await service.getStatus('target-user-1', ownerActor);
+
+        expect(first.data).toMatchObject({ complete: true, nextStep: null });
+        expect(second.data).toMatchObject({ complete: true });
+        expect(mockPrismaService.users_pr.updateMany).toHaveBeenCalledWith({
+          where: {
+            user_id: 'target-user-1',
+            complete: false,
+            profile_picture_complete: true,
+            personal_info_complete: true,
+          },
+          data: { complete: true, date_completed: expect.any(Date) },
+        });
+        expect(
+          mockAuthorizationContextService.invalidateUserAuthorizationCache,
+        ).toHaveBeenCalledTimes(1);
+        expect(mockActingForCache.bump).toHaveBeenCalledTimes(1);
+      });
+
+      it('S1.14 / S1.15 a member that lost the last club reconciles (club_exempt, steps 1-2 done)', async () => {
+        asMode('club_exempt');
+        mockPrismaService.users_pr.findUnique.mockResolvedValue(
+          row({ profile_picture_complete: true, personal_info_complete: true }),
+        );
+        mockPrismaService.users_pr.updateMany.mockResolvedValue({ count: 1 });
+
+        await service.getStatus('target-user-1', ownerActor);
+
+        expect(mockPrismaService.users_pr.updateMany).toHaveBeenCalledTimes(1);
+      });
+
+      it('exposes onboarding_mode to the admin view too, without nextStep', async () => {
+        asMode('club_exempt');
+        mockPrismaService.users_pr.findUnique.mockResolvedValue(row());
+
+        const result = await service.getStatus('target-user-1', adminActor);
+
+        expect(result.data).toMatchObject({ onboarding_mode: 'club_exempt' });
+        expect(result.data).not.toHaveProperty('nextStep');
       });
     });
   });
@@ -363,6 +560,104 @@ describe('PostRegistrationService', () => {
       expect(result).toEqual({
         status: 'success',
         message: 'Paso 2 completado',
+      });
+    });
+
+    describe('onboarding reconcile', () => {
+      const step2Fixtures = () => {
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          gender: 'M',
+          birthday: new Date('2009-03-15'),
+          baptism: true,
+        });
+        mockPrismaService.emergency_contacts.count.mockResolvedValue(1);
+      };
+
+      it('S2.1 club_exempt: completing step 2 reconciles complete', async () => {
+        asMode('club_exempt');
+        step2Fixtures();
+        mockPrismaService.users_pr.updateMany.mockResolvedValue({ count: 1 });
+
+        await service.completeStep2(ownerActor.actorUserId, ownerActor);
+
+        expect(mockPrismaService.users_pr.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              user_id: ownerActor.actorUserId,
+              complete: false,
+              profile_picture_complete: true,
+              personal_info_complete: true,
+            }),
+          }),
+        );
+        expect(
+          mockAuthorizationContextService.invalidateUserAuthorizationCache,
+        ).toHaveBeenCalledWith(ownerActor.actorUserId);
+        expect(mockActingForCache.bump).toHaveBeenCalledWith(
+          ownerActor.actorUserId,
+        );
+      });
+
+      it('S2.15 an admin override of step 2 also reconciles', async () => {
+        asMode('club_exempt');
+        step2Fixtures();
+        mockPrismaService.users_pr.updateMany.mockResolvedValue({ count: 1 });
+
+        await service.completeStep2('target-user-1', adminActor);
+
+        expect(mockPrismaService.users_pr.updateMany).toHaveBeenCalledTimes(1);
+        expect(
+          mockAuthorizationContextService.invalidateUserAuthorizationCache,
+        ).toHaveBeenCalledWith('target-user-1');
+      });
+
+      it('S2.15 an admin override of step 1 reconciles when step 2 is done', async () => {
+        asMode('club_exempt');
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          user_image: 'profile.jpg',
+        });
+        mockPrismaService.users_pr.updateMany.mockResolvedValue({ count: 1 });
+
+        await service.completeStep1('target-user-1', adminActor);
+
+        expect(mockPrismaService.users_pr.updateMany).toHaveBeenCalledTimes(1);
+      });
+
+      it('S2.12 panel_only: steps 1 and 2 are accepted and never mark complete', async () => {
+        asMode('panel_only');
+        step2Fixtures();
+
+        const result = await service.completeStep2(
+          ownerActor.actorUserId,
+          ownerActor,
+        );
+
+        expect(result).toMatchObject({ status: 'success' });
+        expect(mockPrismaService.users_pr.updateMany).not.toHaveBeenCalled();
+        expect(
+          mockAuthorizationContextService.invalidateUserAuthorizationCache,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('club users are not reconciled by steps 1-2 (step 3 completes them)', async () => {
+        asMode('club');
+        step2Fixtures();
+
+        await service.completeStep2(ownerActor.actorUserId, ownerActor);
+
+        expect(mockPrismaService.users_pr.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('a reconcile failure never fails the step', async () => {
+        asMode('club_exempt');
+        step2Fixtures();
+        mockPrismaService.users_pr.updateMany.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          service.completeStep2(ownerActor.actorUserId, ownerActor),
+        ).resolves.toMatchObject({ status: 'success' });
       });
     });
   });
@@ -1161,6 +1456,7 @@ describe('PostRegistrationService', () => {
           },
           nextStep: 'profilePicture',
           dateCompleted: null,
+          onboarding_mode: 'club',
         },
       });
     });

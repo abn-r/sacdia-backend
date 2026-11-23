@@ -23,6 +23,8 @@ import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-e
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 import { ClubRole } from '../common/authorization/roles';
+import type { OnboardingMode } from '../common/authorization/onboarding-mode';
+import { OnboardingModeService } from './onboarding/onboarding-mode.service';
 
 export type PostRegistrationActorContext = {
   actorUserId: string;
@@ -66,6 +68,7 @@ export class PostRegistrationService {
     private roleEligibility: ClubRoleEligibilityService,
     private actingForCache: ActingForCache,
     private postRegistrationRow: PostRegistrationRowService,
+    private onboardingMode: OnboardingModeService,
   ) {}
 
   async getStatus(
@@ -75,20 +78,21 @@ export class PostRegistrationService {
     // Users created outside register (seeds, legacy, admin) have no row yet:
     // start them from "nothing completed". Only a missing/deactivated user is
     // "not initiated".
-    const userPr = await this.postRegistrationRow.ensure(userId);
+    let userPr = await this.postRegistrationRow.ensure(userId);
 
     if (!userPr) {
       throw new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
     }
 
-    let nextStep: string | null = null;
-    if (!userPr.profile_picture_complete) {
-      nextStep = 'profilePicture';
-    } else if (!userPr.personal_info_complete) {
-      nextStep = 'personalInfo';
-    } else if (!userPr.club_selection_complete) {
-      nextStep = 'clubSelection';
+    // The mode is derived on every read (never stored). A club-exempt user
+    // whose two steps are done but whose `complete` is still false (restored
+    // session, admin override, older client) is healed here.
+    const mode = await this.onboardingMode.resolveMode(userId);
+    if (await this.onboardingMode.reconcile(userId, mode)) {
+      userPr = (await this.postRegistrationRow.ensure(userId)) ?? userPr;
     }
+
+    const nextStep = this.nextStepFor(mode, userPr);
 
     const response = {
       status: 'success',
@@ -101,6 +105,7 @@ export class PostRegistrationService {
         },
         nextStep,
         dateCompleted: userPr.date_completed,
+        onboarding_mode: mode,
       },
     };
 
@@ -114,8 +119,52 @@ export class PostRegistrationService {
         complete: response.data.complete,
         steps: response.data.steps,
         dateCompleted: response.data.dateCompleted,
+        onboarding_mode: mode,
       },
     };
+  }
+
+  /**
+   * `club`: photo -> personal info -> club selection. `club_exempt`: photo ->
+   * personal info -> null (club selection is never offered). `panel_only`:
+   * null. Step 3 and the guardian-only exit stay callable in every mode.
+   */
+  private nextStepFor(
+    mode: OnboardingMode,
+    row: {
+      profile_picture_complete: boolean;
+      personal_info_complete: boolean;
+      club_selection_complete: boolean;
+    },
+  ): string | null {
+    if (mode === 'panel_only') {
+      return null;
+    }
+    if (!row.profile_picture_complete) {
+      return 'profilePicture';
+    }
+    if (!row.personal_info_complete) {
+      return 'personalInfo';
+    }
+    if (mode === 'club' && !row.club_selection_complete) {
+      return 'clubSelection';
+    }
+    return null;
+  }
+
+  /**
+   * After step 1 or 2 (also the admin override, which runs through the same
+   * methods): a club-exempt user with both steps done completes. Never throws.
+   */
+  private async reconcileAfterStep(userId: string): Promise<void> {
+    try {
+      const mode = await this.onboardingMode.resolveMode(userId);
+      await this.onboardingMode.reconcile(userId, mode);
+    } catch (error) {
+      this.logger.warn(
+        `Could not reconcile post-registration after a step for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   async getPhotoStatus(userId: string) {
@@ -151,6 +200,7 @@ export class PostRegistrationService {
       });
 
       this.logger.log(`Step 1 (profile picture) completed for user ${userId}`);
+      await this.reconcileAfterStep(userId);
 
       return actor.isOwner
         ? {
@@ -216,6 +266,7 @@ export class PostRegistrationService {
       });
 
       this.logger.log(`Step 2 (personal info) completed for user ${userId}`);
+      await this.reconcileAfterStep(userId);
 
       return actor.isOwner
         ? {
