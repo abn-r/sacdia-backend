@@ -319,6 +319,27 @@ describe('AuthController', () => {
       expect(result.data.authorization.territory.level).toBe('open');
       expect(result.data.authorization.assignable_global_roles).toEqual([]);
     });
+
+    it('S1.17 passes onboarding_mode through additively, next to post_register_complete', async () => {
+      const currentUser = { userId: 'user-123', kind: 'user' } as any;
+      const expected = {
+        status: 'success',
+        data: {
+          user_id: 'user-123',
+          post_register_complete: false,
+          onboarding_mode: 'club_exempt',
+        },
+      };
+      mockAuthService.getProfile.mockResolvedValue(expected);
+
+      const result = await controller.getProfile(currentUser);
+
+      expect(result).toBe(expected);
+      expect(result.data).toMatchObject({
+        post_register_complete: false,
+        onboarding_mode: 'club_exempt',
+      });
+    });
   });
 
   describe('getCompletionStatus', () => {
