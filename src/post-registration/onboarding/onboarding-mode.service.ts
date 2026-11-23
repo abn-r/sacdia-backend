@@ -31,6 +31,29 @@ export class OnboardingModeService {
     return this.modeOf(resolved);
   }
 
+  /**
+   * The mode the user would have if their pending membership requests did not
+   * exist: used before cancelling one, to know whether the registration ever
+   * depended on a club. Other grants (active, inactive, expired) still count.
+   */
+  async resolveModeWithoutPending(userId: string): Promise<OnboardingMode> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    const grants = resolved.authorization.grants;
+    return this.modeOf({
+      ...resolved,
+      authorization: {
+        ...resolved.authorization,
+        grants: {
+          ...grants,
+          club_assignments: grants.club_assignments.filter(
+            (grant) => grant.status !== 'pending',
+          ),
+        },
+      },
+    });
+  }
+
   /** For callers that already hold the fully resolved profile. */
   modeOf(fullyResolved: ResolvedAuthorizationProfile): OnboardingMode {
     return computeOnboardingMode(fullyResolved);

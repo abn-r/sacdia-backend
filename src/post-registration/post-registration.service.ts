@@ -508,9 +508,14 @@ export class PostRegistrationService {
     try {
       // cancelPendingForUser resets the users_pr row with a plain update.
       await this.requireRow(userId);
+      // A club-exempt registration never depended on the club: keep `complete`.
+      const preserveCompletion =
+        (await this.onboardingMode.resolveModeWithoutPending(userId)) ===
+        'club_exempt';
       await this.membershipRequestsService.cancelPendingForUser(
         userId,
         actor.actorUserId,
+        { preserveCompletion },
       );
 
       return actor.isOwner

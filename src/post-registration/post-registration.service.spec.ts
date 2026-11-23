@@ -1399,11 +1399,57 @@ describe('PostRegistrationService', () => {
 
       expect(
         mockMembershipRequestsService.cancelPendingForUser,
-      ).toHaveBeenCalledWith(ownerActor.actorUserId, ownerActor.actorUserId);
+      ).toHaveBeenCalledWith(ownerActor.actorUserId, ownerActor.actorUserId, {
+        preserveCompletion: false,
+      });
       expect(result).toEqual({
         status: 'success',
         message:
           'Solicitud de membresía cancelada. Puedes elegir club y sección nuevamente.',
+      });
+    });
+
+    it('S2.16 a club_exempt user whose only grant is the pending one keeps complete', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        profileWith(['pastor'], [{ assignment_id: 'a-p', status: 'pending' }]),
+      );
+      mockMembershipRequestsService.cancelPendingForUser.mockResolvedValue({
+        assignment_id: 'a-p',
+      });
+
+      await service.cancelPendingMembershipRequest(
+        ownerActor.actorUserId,
+        ownerActor,
+      );
+
+      expect(
+        mockMembershipRequestsService.cancelPendingForUser,
+      ).toHaveBeenCalledWith(ownerActor.actorUserId, ownerActor.actorUserId, {
+        preserveCompletion: true,
+      });
+    });
+
+    it('S2.17 a pastor that also holds another visible club still reopens registration', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        profileWith(
+          ['pastor'],
+          [
+            { assignment_id: 'a-p', status: 'pending' },
+            { assignment_id: 'a-i', status: 'inactive' },
+          ],
+        ),
+      );
+      mockMembershipRequestsService.cancelPendingForUser.mockResolvedValue({});
+
+      await service.cancelPendingMembershipRequest(
+        ownerActor.actorUserId,
+        ownerActor,
+      );
+
+      expect(
+        mockMembershipRequestsService.cancelPendingForUser,
+      ).toHaveBeenCalledWith(ownerActor.actorUserId, ownerActor.actorUserId, {
+        preserveCompletion: false,
       });
     });
   });

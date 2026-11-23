@@ -622,6 +622,43 @@ describe('MembershipRequestsService', () => {
       });
     });
 
+    it('S2.17 without preserveCompletion (club user) the registration reopens: complete goes back to false', async () => {
+      await service.cancelPendingForUser(userId, actorId, {
+        preserveCompletion: false,
+      });
+
+      expect(transactionMock.users_pr.update).toHaveBeenCalledWith({
+        where: { user_id: userId },
+        data: {
+          club_selection_complete: false,
+          complete: false,
+          date_completed: null,
+          active_club_assignment_id: null,
+        },
+      });
+    });
+
+    it('S2.16 preserveCompletion (club_exempt user) resets only club selection and the active assignment, never complete', async () => {
+      await service.cancelPendingForUser(userId, actorId, {
+        preserveCompletion: true,
+      });
+
+      expect(transactionMock.users_pr.update).toHaveBeenCalledTimes(1);
+      expect(transactionMock.users_pr.update).toHaveBeenCalledWith({
+        where: { user_id: userId },
+        data: {
+          club_selection_complete: false,
+          active_club_assignment_id: null,
+        },
+      });
+      const [{ data }] = transactionMock.users_pr.update.mock.calls[0] as [
+        { data: Record<string, unknown> },
+      ];
+      expect(data).not.toHaveProperty('complete');
+      expect(data).not.toHaveProperty('date_completed');
+      expect(mockActingForCache.bump).toHaveBeenCalledWith(userId);
+    });
+
     it('should fail without resetting post-registration when there is no pending request', async () => {
       transactionMock.club_role_assignments.findFirst.mockResolvedValue(null);
 
