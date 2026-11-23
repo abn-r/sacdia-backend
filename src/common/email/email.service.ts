@@ -5,6 +5,7 @@ import {
   EMAIL_JOB_DATA_EXPORT_READY,
   EMAIL_JOB_EMAIL_VERIFICATION,
   EMAIL_JOB_PASSWORD_RESET,
+  EMAIL_JOB_INVITATION,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_CRON_ALERT,
   EMAIL_JOB_INVESTITURE_NOTICE,
@@ -34,6 +35,12 @@ export interface SendPasswordResetParams {
   email: string;
   /** Full reset URL (token embedded) — NEVER pass raw token */
   resetUrl: string;
+}
+
+export interface SendInvitationParams {
+  email: string;
+  /** Full invitation URL (token embedded) — NEVER pass raw token */
+  invitationUrl: string;
 }
 
 export interface SendAccountDeletionConfirmedParams {
@@ -112,6 +119,15 @@ export class EmailService {
     await this.queue.enqueue(EMAIL_JOB_PASSWORD_RESET, {
       to: email,
       resetUrl,
+    });
+  }
+
+  async sendInvitation(params: SendInvitationParams): Promise<void> {
+    const { email, invitationUrl } = params;
+    this.logger.log(`Enqueuing admin invitation email: to=${maskEmail(email)}`);
+    await this.queue.enqueue(EMAIL_JOB_INVITATION, {
+      to: email,
+      invitationUrl,
     });
   }
 

@@ -91,6 +91,7 @@ const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
 
 const NON_EMAIL_VERIFICATION_PREFIXES = [
   'password-reset:',
+  'admin-invitation:',
   'totp:',
   'mfa-session:',
 ] as const;
@@ -1009,6 +1010,46 @@ export class AuthService {
   }
 
   /**
+   * Accepts an admin invitation: sets the password, verifies the email and
+   * consumes the token (one transaction in BetterAuthService), then revokes
+   * the user's sessions (admin creation leaves one open). Does not issue a
+   * session or JWT. Invalid and expired tokens answer with stable codes; the
+   * response never reveals whether an email exists.
+   */
+  async acceptInvitation(dto: ResetPasswordDto) {
+    try {
+      const { userId } =
+        await this.betterAuthService.acceptInvitationWithToken(
+          dto.token,
+          dto.password,
+        );
+      await this.prisma.session.deleteMany({ where: { userId } });
+      await this.blacklistUserTokensBestEffort(userId, 'invitation_accept');
+      this.logger.log(
+        `Admin invitation accepted; sessions revoked for ${userId}`,
+      );
+      return {
+        success: true,
+        message: 'Contraseña creada. Inicie sesión',
+      };
+    } catch (error) {
+      if (
+        error instanceof AppBadRequestException ||
+        error instanceof ServiceUnavailableException
+      ) {
+        throw error;
+      }
+      this.logger.error(
+        `Invitation accept error: ${error instanceof Error ? error.message : String(error)}`,
+        error,
+      );
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+      );
+    }
+  }
+
+  /**
    * Updates the password for the currently authenticated user (self-service).
    *
    * For admin-scoped password updates (setting another user's password without
@@ -1065,7 +1106,7 @@ export class AuthService {
    */
   private async blacklistUserTokensBestEffort(
     userId: string,
-    flow: 'password_reset' | 'password_change',
+    flow: 'password_reset' | 'password_change' | 'invitation_accept',
   ): Promise<void> {
     try {
       await this.tokenBlacklist.blacklistAllUserTokens(

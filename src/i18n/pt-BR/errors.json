@@ -191,6 +191,8 @@
   "AUTH_PASSWORD_RESET_FAILED": "Erro ao solicitar a recuperação de senha",
   "AUTH_PASSWORD_RESET_TOKEN_INVALID": "Token de recuperação inválido ou já utilizado",
   "AUTH_PASSWORD_RESET_TOKEN_EXPIRED": "Token de recuperação expirado. Solicite um novo",
+  "AUTH_INVITATION_TOKEN_INVALID": "O convite é inválido ou já foi utilizado",
+  "AUTH_INVITATION_TOKEN_EXPIRED": "O convite expirou. Peça a um administrador que envie um novo",
   "AUTH_ASSIGNMENT_NOT_FOUND": "A atribuição não pertence ao usuário ou não está ativa",
   "AUTH_ASSIGNMENT_YEAR_MISMATCH": "Esta atribuição não corresponde ao ano eclesiástico vigente ou não possui status ativo",
   "AUTH_POST_REGISTRATION_NOT_STARTED": "O pós-registro não foi iniciado",

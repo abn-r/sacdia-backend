@@ -194,6 +194,8 @@
   "AUTH_PASSWORD_RESET_FAILED": "Error al solicitar la recuperación de contraseña",
   "AUTH_PASSWORD_RESET_TOKEN_INVALID": "Token de recuperación inválido o ya utilizado",
   "AUTH_PASSWORD_RESET_TOKEN_EXPIRED": "Token de recuperación expirado. Solicite uno nuevo",
+  "AUTH_INVITATION_TOKEN_INVALID": "La invitación es inválida o ya fue utilizada",
+  "AUTH_INVITATION_TOKEN_EXPIRED": "La invitación expiró. Pide a un administrador que te envíe una nueva",
   "AUTH_ASSIGNMENT_NOT_FOUND": "La asignación no pertenece al usuario o no está activa",
   "AUTH_ASSIGNMENT_YEAR_MISMATCH": "Esta asignación no corresponde al año eclesiástico vigente o no tiene estado activo",
   "AUTH_POST_REGISTRATION_NOT_STARTED": "El post-registro no ha sido iniciado",

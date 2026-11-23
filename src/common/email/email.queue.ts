@@ -26,6 +26,7 @@ export const EMAIL_WORKER_OPTIONS = {
 export const EMAIL_JOB_DATA_EXPORT_READY = 'email.data-export-ready';
 export const EMAIL_JOB_EMAIL_VERIFICATION = 'email.email-verification';
 export const EMAIL_JOB_PASSWORD_RESET = 'email.password-reset';
+export const EMAIL_JOB_INVITATION = 'email.invitation';
 export const EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED =
   'email.account-deletion-confirmed';
 export const EMAIL_JOB_CRON_ALERT = 'email.cron-alert';
@@ -36,6 +37,7 @@ export type EmailJobType =
   | typeof EMAIL_JOB_DATA_EXPORT_READY
   | typeof EMAIL_JOB_EMAIL_VERIFICATION
   | typeof EMAIL_JOB_PASSWORD_RESET
+  | typeof EMAIL_JOB_INVITATION
   | typeof EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED
   | typeof EMAIL_JOB_CRON_ALERT
   | typeof EMAIL_JOB_INVESTITURE_NOTICE
@@ -64,6 +66,12 @@ export interface EmailVerificationJobPayload {
 export interface PasswordResetJobPayload {
   to: string;
   resetUrl: string;
+  lang?: SupportedEmailLocale;
+}
+
+export interface InvitationJobPayload {
+  to: string;
+  invitationUrl: string;
   lang?: SupportedEmailLocale;
 }
 
@@ -112,6 +120,7 @@ export type EmailJobPayload =
   | DataExportReadyJobPayload
   | EmailVerificationJobPayload
   | PasswordResetJobPayload
+  | InvitationJobPayload
   | AccountDeletionConfirmedJobPayload
   | CronAlertJobPayload
   | InvestitureNoticeJobPayload

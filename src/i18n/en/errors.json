@@ -194,6 +194,8 @@
   "AUTH_PASSWORD_RESET_FAILED": "Error requesting password recovery",
   "AUTH_PASSWORD_RESET_TOKEN_INVALID": "Password reset token is invalid or already used",
   "AUTH_PASSWORD_RESET_TOKEN_EXPIRED": "Password reset token has expired. Request a new one",
+  "AUTH_INVITATION_TOKEN_INVALID": "The invitation is invalid or has already been used",
+  "AUTH_INVITATION_TOKEN_EXPIRED": "The invitation has expired. Ask an administrator to send you a new one",
   "AUTH_ASSIGNMENT_NOT_FOUND": "Assignment does not belong to user or is not active",
   "AUTH_ASSIGNMENT_YEAR_MISMATCH": "This assignment does not correspond to the current ecclesiastical year or is not in active status",
   "AUTH_POST_REGISTRATION_NOT_STARTED": "Post-registration has not been started",

@@ -15,6 +15,7 @@ const mockEmailService = {
   sendDataExportReady: jest.fn().mockResolvedValue(undefined),
   sendEmailVerification: jest.fn().mockResolvedValue(undefined),
   sendPasswordReset: jest.fn().mockResolvedValue(undefined),
+  sendInvitation: jest.fn().mockResolvedValue(undefined),
   sendAccountDeletionConfirmed: jest.fn().mockResolvedValue(undefined),
   enqueue: jest.fn().mockResolvedValue(undefined),
 };
@@ -31,6 +32,7 @@ describe('BetterAuthService', () => {
   // -- Prisma method mocks ---------------------------------------------------
   const mockUsersFindUnique = jest.fn();
   const mockUsersCreate = jest.fn();
+  const mockUsersUpdate = jest.fn();
   const mockSupervisedLoginsFindFirst = jest.fn();
   const mockAccountFindFirst = jest.fn();
   const mockAccountCreate = jest.fn();
@@ -50,6 +52,7 @@ describe('BetterAuthService', () => {
     users: {
       findUnique: mockUsersFindUnique,
       create: mockUsersCreate,
+      update: mockUsersUpdate,
     },
     account: {
       findFirst: mockAccountFindFirst,
@@ -1656,6 +1659,414 @@ describe('BetterAuthService', () => {
       expect(mockAccountUpdate).not.toHaveBeenCalled();
       expect(mockVerificationDeleteMany).toHaveBeenCalledWith({
         where: { identifier: resetIdentifier },
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // admin invitation (7-day token, accept, activation)
+  // ---------------------------------------------------------------------------
+
+  describe('admin invitation', () => {
+    const USER_ID = 'user-uuid-123';
+    const INVITATION_ID = `admin-invitation:${USER_ID}`;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    type Row = {
+      id: string;
+      identifier: string;
+      value: string;
+      expiresAt: Date;
+      createdAt: Date;
+    };
+    let store: Row[];
+
+    /** In-memory `verification` table so token lifecycles are real. */
+    function installVerificationStore() {
+      store = [];
+      mockVerificationCreate.mockImplementation(
+        async ({ data }: { data: Omit<Row, 'createdAt'> }) => {
+          store.push({ ...data, createdAt: new Date() });
+          return data;
+        },
+      );
+      mockVerificationDeleteMany.mockImplementation(
+        async ({ where }: { where: { identifier: string } }) => {
+          const before = store.length;
+          store = store.filter((r) => r.identifier !== where.identifier);
+          return { count: before - store.length };
+        },
+      );
+      mockVerificationDelete.mockImplementation(
+        async ({ where }: { where: { id: string } }) => {
+          store = store.filter((r) => r.id !== where.id);
+          return {};
+        },
+      );
+      mockVerificationFindFirst.mockImplementation(
+        async ({
+          where,
+        }: {
+          where: {
+            value?: string;
+            identifier?: string | { startsWith: string };
+          };
+        }) => {
+          const found = store.filter((r) => {
+            if (where.value !== undefined && r.value !== where.value) {
+              return false;
+            }
+            const id = where.identifier;
+            if (typeof id === 'string') return r.identifier === id;
+            if (id) return r.identifier.startsWith(id.startsWith);
+            return true;
+          });
+          return found.length ? found[found.length - 1] : null;
+        },
+      );
+    }
+
+    const tokenOfLastEmail = (): string => {
+      const call = mockEmailService.sendInvitation.mock.calls.at(-1)![0] as {
+        invitationUrl: string;
+      };
+      return new URL(call.invitationUrl).searchParams.get('token')!;
+    };
+
+    beforeEach(() => {
+      process.env.EMAIL_ENABLED = 'true';
+      process.env.ADMIN_PANEL_URL = 'https://admin.example.com/';
+      installVerificationStore();
+      mockTransaction.mockImplementation(async (ops: Promise<unknown>[]) =>
+        Promise.all(ops),
+      );
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(mockDbAccount);
+      mockAccountUpdate.mockResolvedValue({});
+      mockUsersUpdate.mockResolvedValue({});
+      mockEmailService.sendInvitation.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      delete process.env.EMAIL_ENABLED;
+      delete process.env.ADMIN_PANEL_URL;
+      mockVerificationCreate.mockReset();
+      mockVerificationDelete.mockReset();
+      mockVerificationDeleteMany.mockReset();
+      mockTransaction.mockReset();
+      mockUsersFindUnique.mockReset();
+      mockAccountFindFirst.mockReset();
+    });
+
+    describe('sendInvitation', () => {
+      it('stores a 7-day token under admin-invitation:{userId} (S3.2/S3.3 window)', async () => {
+        const { svc } = buildService();
+
+        const { expiresAt } = await svc.sendInvitation(USER_ID);
+
+        expect(store).toHaveLength(1);
+        expect(store[0].identifier).toBe(INVITATION_ID);
+        const ttl = expiresAt.getTime() - Date.now();
+        expect(ttl).toBeGreaterThan(7 * DAY_MS - 5_000);
+        expect(ttl).toBeLessThanOrEqual(7 * DAY_MS);
+        expect(store[0].expiresAt).toEqual(expiresAt);
+      });
+
+      it('keeps the password-reset token at 1 hour (R3.4)', async () => {
+        const { svc } = buildService();
+
+        await svc.resetPasswordForEmail('test@example.com');
+
+        const reset = store.find(
+          (r) => r.identifier === 'password-reset:test@example.com',
+        )!;
+        const ttl = reset.expiresAt.getTime() - Date.now();
+        expect(ttl).toBeLessThanOrEqual(60 * 60 * 1000);
+        expect(ttl).toBeGreaterThan(60 * 60 * 1000 - 5_000);
+      });
+
+      it('emails the invitation link with mode=invitation, never the reset email', async () => {
+        const { svc } = buildService();
+
+        await svc.sendInvitation(USER_ID);
+
+        const token = store[0].value;
+        expect(mockEmailService.sendInvitation).toHaveBeenCalledWith({
+          email: 'test@example.com',
+          invitationUrl: `https://admin.example.com/reset-password?token=${encodeURIComponent(token)}&mode=invitation`,
+        });
+        expect(mockEmailService.sendPasswordReset).not.toHaveBeenCalled();
+      });
+
+      it('never logs the token or the link', async () => {
+        const { svc } = buildService();
+        const spies = [
+          jest.spyOn(Logger.prototype, 'log'),
+          jest.spyOn(Logger.prototype, 'warn'),
+          jest.spyOn(Logger.prototype, 'error'),
+        ];
+
+        await svc.sendInvitation(USER_ID);
+
+        const logged = spies
+          .flatMap((s) => s.mock.calls)
+          .map((c) => String(c[0]))
+          .join('\n');
+        expect(logged).not.toContain(store[0].value);
+        expect(logged).not.toContain('mode=invitation');
+        spies.forEach((s) => s.mockRestore());
+      });
+
+      it('resend A -> B invalidates A and B works (S3.5)', async () => {
+        const { svc } = buildService();
+
+        await svc.sendInvitation(USER_ID);
+        const tokenA = tokenOfLastEmail();
+        await svc.sendInvitation(USER_ID);
+        const tokenB = tokenOfLastEmail();
+
+        expect(tokenA).not.toBe(tokenB);
+        expect(store.filter((r) => r.identifier === INVITATION_ID)).toHaveLength(
+          1,
+        );
+        await expect(
+          svc.acceptInvitationWithToken(tokenA, 'NewPassword123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+        });
+        await expect(
+          svc.acceptInvitationWithToken(tokenB, 'NewPassword123!'),
+        ).resolves.toEqual({ userId: USER_ID });
+      });
+
+      it('throws 503 BEFORE persisting or deleting anything when EMAIL_ENABLED is off (S3.9)', async () => {
+        const { svc } = buildService();
+        await svc.sendInvitation(USER_ID);
+        const previous = tokenOfLastEmail();
+        const snapshot = JSON.stringify(store);
+        jest.clearAllMocks();
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        delete process.env.EMAIL_ENABLED;
+
+        await expect(svc.sendInvitation(USER_ID)).rejects.toThrow(
+          ServiceUnavailableException,
+        );
+
+        expect(mockUsersFindUnique).not.toHaveBeenCalled();
+        expect(mockTransaction).not.toHaveBeenCalled();
+        expect(mockVerificationCreate).not.toHaveBeenCalled();
+        expect(mockVerificationDeleteMany).not.toHaveBeenCalled();
+        expect(mockEmailService.sendInvitation).not.toHaveBeenCalled();
+        expect(JSON.stringify(store)).toBe(snapshot);
+        // The earlier invitation is still usable.
+        mockTransaction.mockImplementation(async (ops: Promise<unknown>[]) =>
+          Promise.all(ops),
+        );
+        await expect(
+          svc.acceptInvitationWithToken(previous, 'NewPassword123!'),
+        ).resolves.toEqual({ userId: USER_ID });
+      });
+
+      it('throws 503 and persists nothing when ADMIN_PANEL_URL is missing', async () => {
+        delete process.env.ADMIN_PANEL_URL;
+        const { svc } = buildService();
+
+        await expect(svc.sendInvitation(USER_ID)).rejects.toThrow(
+          ServiceUnavailableException,
+        );
+
+        expect(mockTransaction).not.toHaveBeenCalled();
+        expect(mockVerificationCreate).not.toHaveBeenCalled();
+        expect(mockVerificationDeleteMany).not.toHaveBeenCalled();
+        expect(store).toHaveLength(0);
+      });
+
+      it('rejects an unknown user without touching the token table', async () => {
+        mockUsersFindUnique.mockResolvedValue(null);
+        const { svc } = buildService();
+
+        await expect(svc.sendInvitation(USER_ID)).rejects.toMatchObject({
+          code: ErrorCode.USER_NOT_FOUND,
+        });
+        expect(mockTransaction).not.toHaveBeenCalled();
+      });
+
+      it('invitation and forgot-password tokens do not invalidate each other (S3.12)', async () => {
+        const { svc } = buildService();
+
+        await svc.sendInvitation(USER_ID);
+        await svc.resetPasswordForEmail('test@example.com');
+        expect(store.map((r) => r.identifier).sort()).toEqual(
+          [INVITATION_ID, 'password-reset:test@example.com'].sort(),
+        );
+
+        await svc.sendInvitation(USER_ID);
+        expect(store.map((r) => r.identifier).sort()).toEqual(
+          [INVITATION_ID, 'password-reset:test@example.com'].sort(),
+        );
+      });
+    });
+
+    describe('acceptInvitationWithToken', () => {
+      it('sets the password, verifies the email and deletes the token in one transaction (S3.1)', async () => {
+        const { svc } = buildService();
+        await svc.sendInvitation(USER_ID);
+        const token = tokenOfLastEmail();
+        mockTransaction.mockClear();
+
+        await expect(
+          svc.acceptInvitationWithToken(token, 'NewPassword123!'),
+        ).resolves.toEqual({ userId: USER_ID });
+
+        expect(mockTransaction).toHaveBeenCalledTimes(1);
+        expect(mockTransaction.mock.calls[0][0]).toHaveLength(3);
+        expect(mockAccountUpdate).toHaveBeenCalledWith({
+          where: { id: mockDbAccount.id },
+          data: { password: expect.stringMatching(/^\$2[ab]\$12\$/) },
+        });
+        expect(mockUsersUpdate).toHaveBeenCalledWith({
+          where: { user_id: USER_ID },
+          data: { email_verified: true },
+        });
+        expect(store).toHaveLength(0);
+      });
+
+      it('rejects a consumed token (S3.4)', async () => {
+        const { svc } = buildService();
+        await svc.sendInvitation(USER_ID);
+        const token = tokenOfLastEmail();
+        await svc.acceptInvitationWithToken(token, 'NewPassword123!');
+
+        await expect(
+          svc.acceptInvitationWithToken(token, 'OtherPassword123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+        });
+      });
+
+      it('accepts right before the 7th day ends and rejects from day 8 (S3.2/S3.3)', async () => {
+        const { svc } = buildService();
+        store.push({
+          id: 'day7',
+          identifier: INVITATION_ID,
+          value: 'day-7-token',
+          expiresAt: new Date(Date.now() + 60_000),
+          createdAt: new Date(Date.now() - 7 * DAY_MS + 60_000),
+        });
+        await expect(
+          svc.acceptInvitationWithToken('day-7-token', 'NewPassword123!'),
+        ).resolves.toEqual({ userId: USER_ID });
+
+        store.push({
+          id: 'day8',
+          identifier: INVITATION_ID,
+          value: 'day-8-token',
+          expiresAt: new Date(Date.now() - 1_000),
+          createdAt: new Date(Date.now() - 8 * DAY_MS),
+        });
+        mockAccountUpdate.mockClear();
+        await expect(
+          svc.acceptInvitationWithToken('day-8-token', 'NewPassword123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVITATION_TOKEN_EXPIRED,
+        });
+        expect(mockAccountUpdate).not.toHaveBeenCalled();
+        expect(mockUsersUpdate).toHaveBeenCalledTimes(1); // only day 7
+        expect(store).toHaveLength(0);
+      });
+
+      it('does not consume a password-reset token', async () => {
+        const { svc } = buildService();
+        store.push({
+          id: 'r1',
+          identifier: 'password-reset:test@example.com',
+          value: 'reset-token',
+          expiresAt: new Date(Date.now() + 60_000),
+          createdAt: new Date(),
+        });
+
+        await expect(
+          svc.acceptInvitationWithToken('reset-token', 'NewPassword123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+        });
+        expect(mockUsersUpdate).not.toHaveBeenCalled();
+        expect(store).toHaveLength(1);
+      });
+
+      it('fails closed when the user has no credential account', async () => {
+        const { svc } = buildService();
+        await svc.sendInvitation(USER_ID);
+        const token = tokenOfLastEmail();
+        mockAccountFindFirst.mockResolvedValue(null);
+
+        await expect(
+          svc.acceptInvitationWithToken(token, 'NewPassword123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+        });
+        expect(mockAccountCreate).not.toHaveBeenCalled();
+        expect(mockUsersUpdate).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('isAccountActivated', () => {
+      it('is true when the email is verified', async () => {
+        mockUsersFindUnique.mockResolvedValue({
+          ...mockDbUser,
+          email_verified: true,
+        });
+        const { svc } = buildService();
+
+        await expect(svc.isAccountActivated(USER_ID)).resolves.toBe(true);
+      });
+
+      it('is true for an unverified user with a social (non-credential) account', async () => {
+        mockAccountFindFirst.mockResolvedValue({
+          id: 'acc-google',
+          providerId: 'google',
+        });
+        const { svc } = buildService();
+
+        await expect(svc.isAccountActivated(USER_ID)).resolves.toBe(true);
+        expect(mockAccountFindFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { userId: USER_ID, providerId: { not: 'credential' } },
+          }),
+        );
+      });
+
+      it('is false for credential-only and unverified, also after an admin set the password', async () => {
+        mockAccountFindFirst.mockResolvedValue(null); // no social row
+        const { svc } = buildService();
+
+        await expect(svc.isAccountActivated(USER_ID)).resolves.toBe(false);
+
+        // POST /admin/users/:id/password only updates the credential hash.
+        mockAccountFindFirst.mockResolvedValueOnce(mockDbAccount);
+        await svc.updatePasswordById(USER_ID, 'AdminChosen123!');
+        expect(mockAccountUpdate).toHaveBeenCalled();
+        mockAccountFindFirst.mockResolvedValue(null);
+        await expect(svc.isAccountActivated(USER_ID)).resolves.toBe(false);
+      });
+
+      it('is false for an unknown user', async () => {
+        mockUsersFindUnique.mockResolvedValue(null);
+        const { svc } = buildService();
+
+        await expect(svc.isAccountActivated(USER_ID)).resolves.toBe(false);
+      });
+    });
+
+    describe('getInvitationIssuedAt', () => {
+      it('returns the token creation time, or null when none exists', async () => {
+        const { svc } = buildService();
+        await expect(svc.getInvitationIssuedAt(USER_ID)).resolves.toBeNull();
+
+        await svc.sendInvitation(USER_ID);
+        const issued = await svc.getInvitationIssuedAt(USER_ID);
+        expect(issued).toBeInstanceOf(Date);
+        expect(Date.now() - issued!.getTime()).toBeLessThan(5_000);
       });
     });
   });

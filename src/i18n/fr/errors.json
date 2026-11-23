@@ -191,6 +191,8 @@
   "AUTH_PASSWORD_RESET_FAILED": "Erreur lors de la demande de récupération de mot de passe",
   "AUTH_PASSWORD_RESET_TOKEN_INVALID": "Jeton de réinitialisation invalide ou déjà utilisé",
   "AUTH_PASSWORD_RESET_TOKEN_EXPIRED": "Jeton de réinitialisation expiré. Demandez-en un nouveau",
+  "AUTH_INVITATION_TOKEN_INVALID": "L'invitation est invalide ou a déjà été utilisée",
+  "AUTH_INVITATION_TOKEN_EXPIRED": "L'invitation a expiré. Demandez à un administrateur de vous en envoyer une nouvelle",
   "AUTH_ASSIGNMENT_NOT_FOUND": "L'affectation n'appartient pas à l'utilisateur ou n'est pas active",
   "AUTH_ASSIGNMENT_YEAR_MISMATCH": "Cette affectation ne correspond pas à l'année ecclésiastique en cours ou n'a pas le statut actif",
   "AUTH_POST_REGISTRATION_NOT_STARTED": "Le post-enregistrement n'a pas été démarré",

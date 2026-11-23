@@ -18,6 +18,7 @@ import {
   EMAIL_JOB_DATA_EXPORT_READY,
   EMAIL_JOB_EMAIL_VERIFICATION,
   EMAIL_JOB_PASSWORD_RESET,
+  EMAIL_JOB_INVITATION,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_CRON_ALERT,
   EMAIL_JOB_INVESTITURE_NOTICE,
@@ -26,6 +27,7 @@ import {
   DataExportReadyJobPayload,
   EmailVerificationJobPayload,
   PasswordResetJobPayload,
+  InvitationJobPayload,
   AccountDeletionConfirmedJobPayload,
   CronAlertJobPayload,
   InvestitureNoticeJobPayload,
@@ -67,6 +69,8 @@ const loadEmailRendering = lazyModule(() => {
     require('./templates/email-verification') as typeof import('./templates/email-verification');
   const { PasswordResetEmail } =
     require('./templates/password-reset') as typeof import('./templates/password-reset');
+  const { InvitationEmail } =
+    require('./templates/invitation') as typeof import('./templates/invitation');
   const { AccountDeletionConfirmedEmail } =
     require('./templates/account-deletion-confirmed') as typeof import('./templates/account-deletion-confirmed');
   const { CronAlertEmail } =
@@ -82,6 +86,7 @@ const loadEmailRendering = lazyModule(() => {
     DataExportReadyEmail,
     EmailVerificationEmail,
     PasswordResetEmail,
+    InvitationEmail,
     AccountDeletionConfirmedEmail,
     CronAlertEmail,
     InvestitureNoticeEmail,
@@ -327,6 +332,7 @@ export class EmailProcessor
       DataExportReadyEmail,
       EmailVerificationEmail,
       PasswordResetEmail,
+      InvitationEmail,
       AccountDeletionConfirmedEmail,
       CronAlertEmail,
       InvestitureNoticeEmail,
@@ -377,6 +383,23 @@ export class EmailProcessor
         });
         const element = React.createElement(PasswordResetEmail, {
           resetUrl: d.resetUrl,
+          lang,
+        });
+        return {
+          subject,
+          html: await render(element),
+          text: await render(element, { plainText: true }),
+        };
+      }
+
+      case EMAIL_JOB_INVITATION: {
+        const d = data as InvitationJobPayload;
+        const lang = resolveLang(d.lang);
+        const subject = this.i18n.translate('emails.invitation_subject', {
+          lang,
+        });
+        const element = React.createElement(InvitationEmail, {
+          invitationUrl: d.invitationUrl,
           lang,
         });
         return {

@@ -125,6 +125,7 @@ describe('AuthService', () => {
     signOut: jest.fn(),
     resetPasswordForEmail: jest.fn(),
     resetPasswordWithToken: jest.fn(),
+    acceptInvitationWithToken: jest.fn(),
     updateOwnPassword: jest.fn(),
     updatePasswordById: jest.fn(),
     signJwt: jest.fn(),
@@ -2125,6 +2126,103 @@ describe('AuthService', () => {
       expect(
         mockTokenBlacklistService.blacklistAllUserTokens,
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // acceptInvitation()
+  // ---------------------------------------------------------------------------
+  describe('acceptInvitation', () => {
+    it('consumes the invitation, revokes sessions and JWTs, and issues no session (S3.1)', async () => {
+      mockBetterAuthService.acceptInvitationWithToken.mockResolvedValue({
+        userId: 'user-123',
+      });
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 1 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
+        undefined,
+      );
+
+      const result = await service.acceptInvitation({
+        token: 'invite-token',
+        password: 'NewPassword123!',
+      });
+
+      expect(
+        mockBetterAuthService.acceptInvitationWithToken,
+      ).toHaveBeenCalledWith('invite-token', 'NewPassword123!');
+      expect(
+        mockBetterAuthService.resetPasswordWithToken,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.session.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123' },
+      });
+      expect(
+        mockTokenBlacklistService.blacklistAllUserTokens,
+      ).toHaveBeenCalledWith('user-123', 28800);
+      expect(result).toEqual({
+        success: true,
+        message: 'Contraseña creada. Inicie sesión',
+      });
+    });
+
+    it('propagates invalid and expired codes without revoking sessions', async () => {
+      for (const code of [
+        ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+        ErrorCode.AUTH_INVITATION_TOKEN_EXPIRED,
+      ]) {
+        mockPrismaService.session.deleteMany.mockClear();
+        mockBetterAuthService.acceptInvitationWithToken.mockRejectedValue(
+          new AppBadRequestException(code),
+        );
+
+        await expect(
+          service.acceptInvitation({
+            token: 'bad-token',
+            password: 'NewPassword123!',
+          }),
+        ).rejects.toMatchObject({ code });
+        expect(mockPrismaService.session.deleteMany).not.toHaveBeenCalled();
+      }
+    });
+
+    it('answers an unexpected failure with the invalid-token code, never an existence hint', async () => {
+      mockBetterAuthService.acceptInvitationWithToken.mockRejectedValue(
+        new Error('db down'),
+      );
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.acceptInvitation({
+          token: 'invite-token',
+          password: 'NewPassword123!',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+      });
+      errorSpy.mockRestore();
+    });
+
+    it('still succeeds when the JWT blacklist write fails after the password changed', async () => {
+      mockBetterAuthService.acceptInvitationWithToken.mockResolvedValue({
+        userId: 'user-123',
+      });
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 1 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockRejectedValue(
+        new Error('Redis down'),
+      );
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.acceptInvitation({
+          token: 'invite-token',
+          password: 'NewPassword123!',
+        }),
+      ).resolves.toMatchObject({ success: true });
+      errorSpy.mockRestore();
     });
   });
 
@@ -4602,6 +4700,23 @@ describe('AuthService', () => {
       mockPrismaService.verification.findFirst.mockResolvedValue({
         id: 'verification-reset-1',
         identifier: 'password-reset:juan.garcia@example.com',
+        value: validToken,
+        expiresAt: futureDate,
+      });
+
+      await expect(
+        service.confirmEmailVerification({ token: validToken }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID,
+      });
+      expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.verification.delete).not.toHaveBeenCalled();
+    });
+
+    it('should reject an invitation token without consuming it (S3.13)', async () => {
+      mockPrismaService.verification.findFirst.mockResolvedValue({
+        id: 'verification-invite-1',
+        identifier: 'admin-invitation:user-123',
         value: validToken,
         expiresAt: futureDate,
       });

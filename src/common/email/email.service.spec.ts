@@ -5,6 +5,7 @@ import {
   EMAIL_JOB_DATA_EXPORT_READY,
   EMAIL_JOB_EMAIL_VERIFICATION,
   EMAIL_JOB_PASSWORD_RESET,
+  EMAIL_JOB_INVITATION,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_INVESTITURE_NOTICE,
   EMAIL_JOB_MAJORITY_RELEASE,
@@ -112,6 +113,32 @@ describe('EmailService', () => {
           to: 'x@y.com',
           userName: undefined,
         }),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // sendInvitation
+  // ---------------------------------------------------------------------------
+  describe('sendInvitation', () => {
+    it('enqueues the invitation job (not the reset job) with invitationUrl', async () => {
+      await service.sendInvitation({
+        email: 'invited@example.com',
+        invitationUrl:
+          'https://admin.example.com/reset-password?token=opaque&mode=invitation',
+      });
+
+      expect(mockEnqueue).toHaveBeenCalledWith(
+        EMAIL_JOB_INVITATION,
+        expect.objectContaining({
+          to: 'invited@example.com',
+          invitationUrl:
+            'https://admin.example.com/reset-password?token=opaque&mode=invitation',
+        }),
+      );
+      expect(mockEnqueue).not.toHaveBeenCalledWith(
+        EMAIL_JOB_PASSWORD_RESET,
+        expect.anything(),
       );
     });
   });
