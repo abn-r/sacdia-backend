@@ -32,6 +32,39 @@ export class OnboardingModeService {
   }
 
   /**
+   * What every sign-in path (password and social) needs to answer: the derived
+   * mode, the reconciliation of a club-exempt registration, and whether the app
+   * must open post-registration. The mode is derived on every sign-in (never
+   * stored). A sign-in must never fail because of it: when the profile cannot
+   * be resolved it falls back to `club`, the behavior before the mode existed.
+   *
+   * `storedComplete` is `users_pr.complete` as read by the caller (undefined or
+   * null when the user has no row yet).
+   */
+  async resolveForLogin(
+    userId: string,
+    storedComplete: boolean | null | undefined,
+  ): Promise<{
+    mode: OnboardingMode;
+    reconciled: boolean;
+    needsPostRegistration: boolean;
+  }> {
+    let mode: OnboardingMode;
+    try {
+      mode = await this.resolveMode(userId);
+    } catch (error) {
+      this.logger.warn(
+        `Could not resolve the onboarding mode at login for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      mode = 'club';
+    }
+    const reconciled = await this.reconcile(userId, mode);
+    const needsPostRegistration =
+      mode === 'panel_only' ? false : !(reconciled || storedComplete);
+    return { mode, reconciled, needsPostRegistration };
+  }
+
+  /**
    * The mode the user would have if their pending membership requests did not
    * exist: used before cancelling one, to know whether the registration ever
    * depended on a club. Other grants (active, inactive, expired) still count.

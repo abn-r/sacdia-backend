@@ -76,7 +76,6 @@ import {
 } from './acting-for/auth-principal';
 import { stripClubContext } from './acting-for/strip-club-context';
 import { OnboardingModeService } from '../post-registration/onboarding/onboarding-mode.service';
-import type { OnboardingMode } from '../common/authorization/onboarding-mode';
 import { computeActorAuthorizationSummary } from '../common/authorization/capabilities';
 import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 import { SupervisionStateService } from '../guardianships/supervision-state.service';
@@ -493,18 +492,15 @@ export class AuthService {
 
     // Derived on every login (never stored). A club-exempt user whose two steps
     // are done is completed here too (idempotent), so the app never asks twice.
-    const mode = await this.resolveLoginOnboardingMode(user.user_id);
-    const reconciled = await this.onboardingMode.reconcile(user.user_id, mode);
+    const { mode, reconciled, needsPostRegistration } =
+      await this.onboardingMode.resolveForLogin(
+        user.user_id,
+        user.users_pr?.complete,
+      );
     const postRegistrationStatus =
       reconciled && user.users_pr
         ? { ...user.users_pr, complete: true }
         : (user.users_pr ?? null);
-    const needsPostRegistration =
-      mode === 'panel_only'
-        ? false
-        : postRegistrationStatus
-          ? !postRegistrationStatus.complete
-          : true;
 
     // Extract roles as flat array of strings
     const roles = (user.users_roles ?? []).map((ur) => ur.roles.role_name);
@@ -541,23 +537,6 @@ export class AuthService {
         onboarding_mode: mode,
       },
     };
-  }
-
-  /**
-   * The login must keep working when the authorization profile cannot be read:
-   * fall back to `club`, which is exactly the behavior before the mode existed.
-   */
-  private async resolveLoginOnboardingMode(
-    userId: string,
-  ): Promise<OnboardingMode> {
-    try {
-      return await this.onboardingMode.resolveMode(userId);
-    } catch (error) {
-      this.logger.warn(
-        `Could not resolve the onboarding mode at login for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return 'club';
-    }
   }
 
   /** A lockout counting problem must never turn into a 500 on the login path. */

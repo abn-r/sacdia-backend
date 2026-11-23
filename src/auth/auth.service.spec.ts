@@ -1005,7 +1005,7 @@ describe('AuthService', () => {
 
       it('falls back to club (the behavior before the mode) when the profile cannot be resolved', async () => {
         const warn = jest
-          .spyOn((service as any).logger, 'warn')
+          .spyOn((service as any).onboardingMode.logger, 'warn')
           .mockImplementation();
         mockAuthorizationContextService.resolveUserAuthorization.mockRejectedValue(
           new Error('redis down'),

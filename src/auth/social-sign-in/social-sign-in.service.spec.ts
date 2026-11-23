@@ -5,6 +5,8 @@ import { AppUnauthorizedException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
+import { OnboardingModeService } from '../../post-registration/onboarding/onboarding-mode.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SUPERVISED_LOGIN_EVENTS } from '../supervised/supervised-login-events.port';
 import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.resolver';
@@ -40,9 +42,29 @@ describe('SocialSignInService', () => {
   const actingForCache = { bump: jest.fn().mockResolvedValue(undefined) };
   const prisma = {
     users: { findUnique: jest.fn() },
-    users_pr: { findUnique: jest.fn() },
+    users_pr: { findUnique: jest.fn(), updateMany: jest.fn() },
     account: { findMany: jest.fn(), update: jest.fn() },
   };
+  const authorizationContext = {
+    resolveUserAuthorization: jest.fn(),
+    invalidateUserAuthorizationCache: jest.fn(),
+  };
+  const profileOf = (globalRoles: string[], clubAssignments: unknown[]) => ({
+    authorization: {
+      grants: {
+        global_roles: globalRoles.map((role_name) => ({
+          role_name,
+          permissions: [],
+          scope: {},
+        })),
+        club_assignments: clubAssignments,
+        direct_permissions: [],
+      },
+      active_assignment: { assignment_id: null },
+      effective: { permissions: [], scope: { global: {}, club: null } },
+    },
+    legacy: { roles: globalRoles },
+  });
   const fileStorage = {
     getSignedDownloadUrl: jest.fn(
       async (_b: unknown, v: string) => `signed:${v}`,
@@ -81,6 +103,10 @@ describe('SocialSignInService', () => {
       user_image: 'profiles/u1.jpg',
     });
     prisma.users_pr.findUnique.mockResolvedValue({ complete: true });
+    prisma.users_pr.updateMany.mockResolvedValue({ count: 0 });
+    authorizationContext.resolveUserAuthorization.mockResolvedValue(
+      profileOf(['user'], []),
+    );
     prisma.account.findMany.mockResolvedValue([
       { providerId: 'credential' },
       { providerId: 'google' },
@@ -100,6 +126,12 @@ describe('SocialSignInService', () => {
         { provide: SupervisedPrincipalResolver, useValue: supervisedResolver },
         { provide: SUPERVISED_LOGIN_EVENTS, useValue: supervisedEvents },
         { provide: ActingForCache, useValue: actingForCache },
+        // Real service: the same mode/reconcile rules as the password login.
+        OnboardingModeService,
+        {
+          provide: AuthorizationContextService,
+          useValue: authorizationContext,
+        },
       ],
     }).compile();
     service = module.get(SocialSignInService);
@@ -125,6 +157,7 @@ describe('SocialSignInService', () => {
         connectedProviders: ['google'],
       },
       needsPostRegistration: false,
+      onboarding_mode: 'club',
     });
     expect(google.verify).toHaveBeenCalledWith('t', 'n');
     expect(betterAuth.createSession).toHaveBeenCalledWith('user-1', context);
@@ -257,6 +290,77 @@ describe('SocialSignInService', () => {
       service.signIn('google', { idToken: 't', nonce: 'n' }),
     ).resolves.toMatchObject({
       needsPostRegistration: true,
+    });
+  });
+
+  describe('onboarding mode (same rules as POST /auth/login)', () => {
+    const signIn = () =>
+      service.signIn('google', { idToken: 't', nonce: 'n' });
+
+    it('club: needsPostRegistration follows complete, nothing reconciled', async () => {
+      prisma.users_pr.findUnique.mockResolvedValue({ complete: false });
+      await expect(signIn()).resolves.toMatchObject({
+        onboarding_mode: 'club',
+        needsPostRegistration: true,
+      });
+      expect(prisma.users_pr.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('club_exempt: asks for the steps while incomplete and reconciles', async () => {
+      authorizationContext.resolveUserAuthorization.mockResolvedValue(
+        profileOf(['pastor'], []),
+      );
+      prisma.users_pr.findUnique.mockResolvedValue({ complete: false });
+      await expect(signIn()).resolves.toMatchObject({
+        onboarding_mode: 'club_exempt',
+        needsPostRegistration: true,
+      });
+      expect(prisma.users_pr.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('club_exempt: reports complete when the reconcile flips it', async () => {
+      authorizationContext.resolveUserAuthorization.mockResolvedValue(
+        profileOf(['pastor'], []),
+      );
+      prisma.users_pr.findUnique.mockResolvedValue({ complete: false });
+      prisma.users_pr.updateMany.mockResolvedValue({ count: 1 });
+      await expect(signIn()).resolves.toMatchObject({
+        onboarding_mode: 'club_exempt',
+        needsPostRegistration: false,
+      });
+      expect(
+        authorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith('user-1');
+      expect(actingForCache.bump).toHaveBeenCalledWith('user-1');
+    });
+
+    it('panel_only: never needs post-registration, nothing written', async () => {
+      authorizationContext.resolveUserAuthorization.mockResolvedValue(
+        profileOf(['director-union'], []),
+      );
+      prisma.users_pr.findUnique.mockResolvedValue({ complete: false });
+      await expect(signIn()).resolves.toMatchObject({
+        onboarding_mode: 'panel_only',
+        needsPostRegistration: false,
+      });
+      expect(prisma.users_pr.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('falls back to club with a warning when the mode cannot be resolved: the sign-in still succeeds', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation();
+      authorizationContext.resolveUserAuthorization.mockRejectedValue(
+        new Error('redis down'),
+      );
+      prisma.users_pr.findUnique.mockResolvedValue({ complete: false });
+      await expect(signIn()).resolves.toMatchObject({
+        accessToken: 'sacdia-jwt',
+        onboarding_mode: 'club',
+        needsPostRegistration: true,
+      });
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
     });
   });
 
