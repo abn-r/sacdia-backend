@@ -14,6 +14,7 @@ import {
   COORDINATOR_ROLES,
   DIVISION_ROLES,
   LOCAL_FIELD_ROLES,
+  ROLES_REQUIRING_LOCAL_FIELD,
   UNION_ROLES,
 } from './role-sets';
 import { canViewPeriodicReports } from './periodic-reports-access';
@@ -24,7 +25,7 @@ export type { CapabilityKey };
 
 /**
  * What the actor can attempt, published in `GET /auth/me` as
- * `data.authorization.{capabilities,territory,assignable_global_roles}` so the
+ * `data.authorization.{capabilities,territory,assignable_global_roles,local_field_required_roles}` so the
  * admin panel and the app stop replicating role rules.
  *
  * Semantics of a capability: "the actor may ATTEMPT it on at least one
@@ -427,13 +428,26 @@ export function computeCapabilities(
   );
 }
 
-/** The three blocks `GET /auth/me` adds to `data.authorization`. */
+/**
+ * Roles the actor may assign that cannot be created without a Field:
+ * `assignable_global_roles` ∩ `ROLES_REQUIRING_LOCAL_FIELD`, same role-name
+ * form and order as `assignable_global_roles`.
+ */
+export function localFieldRequiredRoles(
+  assignableRoles: readonly string[],
+): string[] {
+  const requiring = new Set<string>(ROLES_REQUIRING_LOCAL_FIELD);
+  return assignableRoles.filter((role) => requiring.has(role));
+}
+
+/** The four blocks `GET /auth/me` adds to `data.authorization`. */
 export function computeActorAuthorizationSummary(
   resolved: ResolvedAuthorizationProfile,
 ): {
   capabilities: CapabilityKey[];
   territory: ActorTerritory;
   assignable_global_roles: string[];
+  local_field_required_roles: string[];
 } {
   const ctx = buildCapabilityContext(resolved);
   return {
@@ -442,5 +456,8 @@ export function computeActorAuthorizationSummary(
     ).sort(byString),
     territory: ctx.territory,
     assignable_global_roles: ctx.assignableGlobalRoles,
+    local_field_required_roles: localFieldRequiredRoles(
+      ctx.assignableGlobalRoles,
+    ),
   };
 }

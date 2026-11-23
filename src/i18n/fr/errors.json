@@ -108,6 +108,7 @@
   "ADMIN_BULK_TOO_MANY_ROWS": "Le fichier contient {received} lignes ; le maximum est {max}.",
   "ADMIN_USER_NO_GLOBAL_PERMISSIONS": "Vous n'avez pas les permissions globales pour consulter les utilisateurs administratifs",
   "ADMIN_USER_MFA_NOT_ENABLED": "L'utilisateur n'a pas le MFA activé",
+  "ADMIN_USER_LOCAL_FIELD_REQUIRED": "Ce rôle nécessite un Champ Local. Sélectionnez un Champ Local pour continuer.",
   "ADMIN_SESSION_NOT_FOUND": "Session introuvable pour l'utilisateur indiqué",
   "ADMIN_HONOR_NOT_FOUND": "Honneur introuvable",
   "ADMIN_HONOR_REQUIREMENT_NOT_FOUND": "Condition d'honneur introuvable",

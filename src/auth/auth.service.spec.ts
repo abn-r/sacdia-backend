@@ -2629,6 +2629,8 @@ describe('AuthService', () => {
           'user',
           'zone-coordinator',
         ]);
+        // R4.3: the roles of that list that need a Field, same name form.
+        expect(authorization.local_field_required_roles).toEqual(['pastor']);
         const capabilities = authorization.capabilities as string[];
         expect(capabilities).toEqual([...capabilities].sort());
         expect(capabilities).toEqual(
@@ -2693,6 +2695,7 @@ describe('AuthService', () => {
           local_field_id: null,
         });
         expect(authorization.assignable_global_roles).toEqual([]);
+        expect(authorization.local_field_required_roles).toEqual([]);
       });
 
       it('computes the summary after the club context is stripped for a pending teen', async () => {
@@ -3816,6 +3819,7 @@ describe('AuthService', () => {
           local_field_id: null,
         },
         assignable_global_roles: [],
+        local_field_required_roles: [],
       });
       expect(result.data.post_register_complete).toBe(true);
       expect(mockLegalService.getStatus).toHaveBeenCalledWith('user-123');

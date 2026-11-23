@@ -108,6 +108,7 @@
   "ADMIN_BULK_TOO_MANY_ROWS": "O arquivo tem {received} linhas; o máximo é {max}.",
   "ADMIN_USER_NO_GLOBAL_PERMISSIONS": "Você não tem permissões globais para consultar usuários administrativos",
   "ADMIN_USER_MFA_NOT_ENABLED": "O usuário não tem MFA habilitado",
+  "ADMIN_USER_LOCAL_FIELD_REQUIRED": "Este papel exige um Campo Local. Selecione um Campo Local para continuar.",
   "ADMIN_SESSION_NOT_FOUND": "Sessão não encontrada para o usuário indicado",
   "ADMIN_HONOR_NOT_FOUND": "Honra não encontrada",
   "ADMIN_HONOR_REQUIREMENT_NOT_FOUND": "Requisito de honra não encontrado",

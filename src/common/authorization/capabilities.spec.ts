@@ -7,6 +7,7 @@ import {
   computeActorAuthorizationSummary,
   computeCapabilities,
   computeTerritory,
+  localFieldRequiredRoles,
   type CapabilityKey,
 } from './capabilities';
 import { CAPABILITY_KEYS } from './generated/capability-keys';
@@ -488,11 +489,15 @@ describe('capabilities catalog', () => {
         expect(assignableGlobalRoles(fixture)).toEqual(assignable);
       });
 
-      it('summarises the three blocks in one pass', () => {
+      it('summarises the four blocks in one pass', () => {
         expect(computeActorAuthorizationSummary(fixture)).toEqual({
           capabilities,
           territory,
           assignable_global_roles: assignable,
+          // R4.3: assignable roles that need a Field (pastor today).
+          local_field_required_roles: assignable.includes('pastor')
+            ? ['pastor']
+            : [],
         });
       });
     },
@@ -748,7 +753,22 @@ describe('capabilities catalog', () => {
           local_field_id: null,
         },
         assignable_global_roles: [],
+        local_field_required_roles: [],
       });
+    });
+
+    it('publishes only the required-Field roles the actor can assign, in role-name form', () => {
+      expect(localFieldRequiredRoles(['coordinator', 'pastor', 'user'])).toEqual(
+        ['pastor'],
+      );
+      expect(localFieldRequiredRoles(['coordinator', 'user'])).toEqual([]);
+      expect(localFieldRequiredRoles([])).toEqual([]);
+      // Same form as assignable_global_roles: a subset of it.
+      const assignable = assignableGlobalRoles(
+        resolvedFor({ globalRoles: ['director-lf'] }),
+      );
+      const required = localFieldRequiredRoles(assignable);
+      expect(required.every((role) => assignable.includes(role))).toBe(true);
     });
 
     it('does not mutate its input', () => {

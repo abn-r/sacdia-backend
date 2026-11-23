@@ -1,6 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppBadRequestException } from '../common/errors/app.exception';
 import {
   memberInDivisionWhere,
   memberInLocalFieldWhere,
@@ -27,6 +28,10 @@ describe('AdminUsersService', () => {
       count: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
+    },
+    users_pr: {
+      createMany: jest.fn(),
     },
     roles: {
       findFirst: jest.fn(),
@@ -81,6 +86,7 @@ describe('AdminUsersService', () => {
   const mockBetterAuthService = {
     createUser: jest.fn(),
     resetPasswordForEmail: jest.fn(),
+    sendInvitation: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -2217,7 +2223,11 @@ describe('AdminUsersService', () => {
       mockPrismaService.users.update.mockResolvedValue({});
       mockPrismaService.users_roles.create.mockResolvedValue({});
 
-      mockBetterAuthService.resetPasswordForEmail.mockResolvedValue(undefined);
+      mockPrismaService.users_pr.createMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.users.delete.mockResolvedValue({});
+      mockBetterAuthService.sendInvitation.mockResolvedValue({
+        expiresAt: new Date(),
+      });
     });
 
     it('should create user, assign role, send invite and return user_id + email + invite_email_sent=true', async () => {
@@ -2234,9 +2244,11 @@ describe('AdminUsersService', () => {
         expect.any(String), // temp password — opaque
         'Juan Pérez García',
       );
-      expect(mockBetterAuthService.resetPasswordForEmail).toHaveBeenCalledWith(
-        'juan.perez@example.com',
+      // S3.8 / R3.1: the 7-day invitation, never the 1-hour reset email.
+      expect(mockBetterAuthService.sendInvitation).toHaveBeenCalledWith(
+        'new-user-uuid',
       );
+      expect(mockBetterAuthService.resetPasswordForEmail).not.toHaveBeenCalled();
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
     });
 
@@ -2287,7 +2299,7 @@ describe('AdminUsersService', () => {
     });
 
     it('should create user with invite_email_sent=false when EMAIL_ENABLED is not true', async () => {
-      mockBetterAuthService.resetPasswordForEmail.mockRejectedValue(
+      mockBetterAuthService.sendInvitation.mockRejectedValue(
         new ServiceUnavailableException('email disabled'),
       );
 
@@ -2301,6 +2313,142 @@ describe('AdminUsersService', () => {
       // User must still be created and role assigned
       expect(mockBetterAuthService.createUser).toHaveBeenCalled();
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
+    });
+
+    describe('roles that require a Field', () => {
+      beforeEach(() => {
+        mockPrismaService.roles.findFirst.mockResolvedValue({
+          role_id: 'role-uuid-pastor',
+          role_name: 'pastor',
+        });
+      });
+
+      it('S4.2 rejects a pastor without local_field_id with 400 before Better Auth runs', async () => {
+        await expect(
+          service.createAdminUser(
+            'actor-admin-uuid',
+            buildCreateDto({ role: 'pastor', local_field_id: undefined }),
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.ADMIN_USER_LOCAL_FIELD_REQUIRED,
+          getStatus: expect.any(Function),
+        });
+
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+        expect(mockPrismaService.users_pr.createMany).not.toHaveBeenCalled();
+        expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
+      });
+
+      it('answers with HTTP 400', async () => {
+        const error = await service
+          .createAdminUser(
+            'actor-admin-uuid',
+            buildCreateDto({ role: 'pastor', local_field_id: undefined }),
+          )
+          .catch((e: { getStatus(): number }) => e);
+        expect(error.getStatus()).toBe(400);
+      });
+
+      it('S4.1 creates a pastor with a Field, with its users_pr row and the invitation', async () => {
+        const result = await service.createAdminUser(
+          'actor-admin-uuid',
+          buildCreateDto({ role: 'pastor', local_field_id: 10 }),
+        );
+
+        expect(result).toEqual({
+          user_id: 'new-user-uuid',
+          email: 'juan.perez@example.com',
+          invite_email_sent: true,
+        });
+        expect(mockPrismaService.users_pr.createMany).toHaveBeenCalledWith({
+          data: [{ user_id: 'new-user-uuid' }],
+          skipDuplicates: true,
+        });
+        expect(mockBetterAuthService.sendInvitation).toHaveBeenCalledWith(
+          'new-user-uuid',
+        );
+      });
+
+      it('S4.5 keeps the Field optional for a coordinator', async () => {
+        mockPrismaService.roles.findFirst.mockResolvedValue({
+          role_id: 'role-uuid-coordinator',
+          role_name: 'coordinator',
+        });
+
+        await expect(
+          service.createAdminUser(
+            'actor-admin-uuid',
+            buildCreateDto({ role: 'coordinator', local_field_id: undefined }),
+          ),
+        ).resolves.toMatchObject({ user_id: 'new-user-uuid' });
+      });
+    });
+
+    it('R4.5 creates the users_pr row in the same transaction as profile and role', async () => {
+      const calls: string[] = [];
+      mockPrismaService.users.update.mockImplementation(() => {
+        calls.push('users.update');
+        return Promise.resolve({});
+      });
+      mockPrismaService.users_roles.create.mockImplementation(() => {
+        calls.push('users_roles.create');
+        return Promise.resolve({});
+      });
+      mockPrismaService.users_pr.createMany.mockImplementation(() => {
+        calls.push('users_pr.createMany');
+        return Promise.resolve({ count: 1 });
+      });
+      mockPrismaService.$transaction.mockImplementation(
+        (ops: Promise<unknown>[]) => {
+          expect(ops).toHaveLength(3); // the three writes ARE the transaction
+          return Promise.all(ops);
+        },
+      );
+
+      await service.createAdminUser('actor-admin-uuid', buildCreateDto());
+
+      expect(calls).toEqual([
+        'users.update',
+        'users_roles.create',
+        'users_pr.createMany',
+      ]);
+      expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('S4.6 rolls back and discards the new user when the users_pr insert fails', async () => {
+      mockPrismaService.users_pr.createMany.mockRejectedValue(
+        new Error('users_pr insert failed'),
+      );
+      // A real transaction would roll back the profile and role writes.
+      mockPrismaService.$transaction.mockImplementation(
+        async (ops: Promise<unknown>[]) => {
+          const settled = await Promise.allSettled(ops);
+          const failed = settled.find((r) => r.status === 'rejected');
+          if (failed) throw (failed as PromiseRejectedResult).reason;
+          return settled;
+        },
+      );
+
+      await expect(
+        service.createAdminUser('actor-admin-uuid', buildCreateDto()),
+      ).rejects.toThrow('users_pr insert failed');
+
+      expect(mockPrismaService.users.delete).toHaveBeenCalledWith({
+        where: { user_id: 'new-user-uuid' },
+      });
+      expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
+    });
+
+    it('S4.6 still surfaces the original error when the cleanup itself fails', async () => {
+      mockPrismaService.$transaction.mockRejectedValue(
+        new Error('users_pr insert failed'),
+      );
+      mockPrismaService.users.delete.mockRejectedValue(new Error('cleanup'));
+
+      await expect(
+        service.createAdminUser('actor-admin-uuid', buildCreateDto()),
+      ).rejects.toThrow('users_pr insert failed');
     });
 
     it('should build full_name without maternal_last_name when absent', async () => {
@@ -2373,7 +2521,10 @@ describe('AdminUsersService', () => {
       );
       mockPrismaService.users.update.mockResolvedValue({});
       mockPrismaService.users_roles.create.mockResolvedValue({});
-      mockBetterAuthService.resetPasswordForEmail.mockResolvedValue(undefined);
+      mockPrismaService.users_pr.createMany.mockResolvedValue({ count: 1 });
+      mockBetterAuthService.sendInvitation.mockResolvedValue({
+        expiresAt: new Date(),
+      });
     });
 
     it('happy path: 3 rows, all succeed', async () => {
@@ -2515,6 +2666,128 @@ describe('AdminUsersService', () => {
       expect(result.succeeded).toBe(0);
       expect(result.failed).toBe(1);
       expect(result.results[0].error_code).toBe('EMAIL_ALREADY_IN_USE');
+    });
+
+    it('S4.3 reports a pastor row without local_field_id and still creates the other rows', async () => {
+      mockPrismaService.users.findUnique.mockReset();
+      mockBetterAuthService.createUser.mockReset();
+      let n = 0;
+      mockPrismaService.users.findUnique.mockImplementation(
+        (args: { where: { email?: string } }) =>
+          Promise.resolve(
+            args.where.email ? null : { users_roles: adminActorRolesForBulk },
+          ),
+      );
+      mockBetterAuthService.createUser.mockImplementation(() => {
+        n += 1;
+        return Promise.resolve({ user: { id: `uid-${n}` }, session: {} });
+      });
+      mockPrismaService.roles.findFirst.mockImplementation(
+        (args: { where: { role_name: string } }) =>
+          Promise.resolve({
+            role_id: `r-${args.where.role_name}`,
+            role_name: args.where.role_name,
+          }),
+      );
+
+      const buffer = buildXlsxBuffer([
+        ['a@x.com', 'Ana', 'Lopez', '', 'user', 1, 12, 34],
+        ['b@x.com', 'Bob', 'Smith', '', 'user', 1, 12, 34],
+        ['c@x.com', 'Carlos', 'Torres', '', 'user', 1, 12, 34],
+        ['bad@x.com', 'Pastor', 'Sin Campo', '', 'pastor', 1, 12, ''],
+        ['ok@x.com', 'Pastor', 'Con Campo', '', 'pastor', 1, 12, 34],
+      ]);
+
+      const result = await service.bulkCreateAdminUsers(
+        'actor-admin-uuid',
+        buffer,
+        XLSX_MIME,
+      );
+
+      expect(result.total).toBe(5);
+      expect(result.succeeded).toBe(4);
+      expect(result.failed).toBe(1);
+      const bad = result.results.find((r) => r.email === 'bad@x.com');
+      expect(bad).toMatchObject({
+        row: 5,
+        status: 'error',
+        error_code: 'LOCAL_FIELD_REQUIRED',
+      });
+      expect(
+        result.results.filter((r) => r.status === 'success'),
+      ).toHaveLength(4);
+      expect(mockBetterAuthService.createUser).toHaveBeenCalledTimes(4);
+    });
+
+    it('S4.4 reports every row when all are pastors without local_field_id and creates none', async () => {
+      mockPrismaService.users.findUnique.mockReset();
+      mockBetterAuthService.createUser.mockReset();
+
+      const buffer = buildXlsxBuffer([
+        ['p1@x.com', 'Uno', 'Pastor', '', 'pastor', 1, 12, ''],
+        ['p2@x.com', 'Dos', 'Pastor', '', 'pastor', 1, 12, ''],
+      ]);
+
+      const result = await service.bulkCreateAdminUsers(
+        'actor-admin-uuid',
+        buffer,
+        XLSX_MIME,
+      );
+
+      expect(result.succeeded).toBe(0);
+      expect(result.failed).toBe(2);
+      expect(result.results.map((r) => r.error_code)).toEqual([
+        'LOCAL_FIELD_REQUIRED',
+        'LOCAL_FIELD_REQUIRED',
+      ]);
+      expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+    });
+
+    it('maps the single-create rejection to the row-level code too', async () => {
+      mockPrismaService.users.findUnique.mockReset();
+      mockBetterAuthService.createUser.mockReset();
+      const spy = jest
+        .spyOn(service, 'createAdminUser')
+        .mockRejectedValue(
+          new AppBadRequestException(ErrorCode.ADMIN_USER_LOCAL_FIELD_REQUIRED),
+        );
+
+      const result = await service.bulkCreateAdminUsers(
+        'actor-admin-uuid',
+        buildXlsxBuffer([
+          ['p1@x.com', 'Uno', 'Pastor', '', 'user', 1, 12, 34],
+        ]),
+        XLSX_MIME,
+      );
+
+      expect(result.results[0].error_code).toBe('LOCAL_FIELD_REQUIRED');
+      spy.mockRestore();
+    });
+
+    it('adds requiere_campo_local to the "Roles permitidos" template sheet', async () => {
+      mockPrismaService.users.findUnique.mockReset();
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        users_roles: adminActorRolesForBulk,
+      });
+
+      const buffer = await service.getBulkTemplateBuffer('actor-admin-uuid');
+
+      const XLSX = require('xlsx') as typeof import('xlsx');
+      const wb = XLSX.read(buffer, { type: 'buffer' });
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(
+        wb.Sheets['Roles permitidos'],
+      );
+      expect(Object.keys(rows[0])).toEqual([
+        'slug',
+        'etiqueta',
+        'requiere_campo_local',
+      ]);
+      const bySlug = Object.fromEntries(
+        rows.map((r) => [r.slug, r.requiere_campo_local]),
+      );
+      expect(bySlug['pastor']).toBe('si');
+      expect(bySlug['coordinator']).toBe('no');
+      expect(bySlug['user']).toBe('no');
     });
 
     it('should throw AppBadRequestException when file has more than 500 rows', async () => {
