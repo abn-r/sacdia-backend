@@ -1,4 +1,5 @@
 import {
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -7,8 +8,10 @@ import {
 import {
   AppBadRequestException,
   AppConflictException,
+  AppException,
   AppForbiddenException,
   AppNotFoundException,
+  AppServiceUnavailableException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { randomBytes } from 'crypto';
@@ -597,8 +600,13 @@ interface AdminUserDetail extends AdminUserListItem {
   guardianships: AdminGuardianshipsBlock | null;
   family_access: AdminFamilyAccessBlock | null;
   post_registration: MinimalPostRegistrationBlock | null;
+  /** True while the admin invitation has not been accepted (R3.15). */
+  invitation_pending: boolean;
   scope: ScopeMeta;
 }
+
+/** Minimum gap between two invitations for the same user (R3.11). */
+const INVITATION_RESEND_COOLDOWN_MS = 60_000;
 
 // NOTE: xlsx 0.18.x is the last Apache-2.0 licensed release available on npm.
 // Newer versions are CDN-only. The package has known prototype-pollution advisories
@@ -772,8 +780,84 @@ export class AdminUsersService {
       guardianships,
       family_access: familyAccess,
       post_registration: sensitiveBlocks.post_registration,
+      invitation_pending: !(await this.betterAuthService.isAccountActivated(
+        user.user_id,
+      )),
       scope: this.toScopeMeta(scope),
     };
+  }
+
+  /**
+   * Resends the admin invitation (R3.9-R3.12, R3.14).
+   *
+   * Order: 404 (target missing or outside the actor scope) -> 403 (the actor
+   * cannot create the target's role) -> 409 (already accepted) -> 429
+   * (60 s cooldown) -> 503 (email unavailable; BetterAuthService throws before
+   * touching the previous token, so it stays valid).
+   */
+  async resendInvitation(
+    actorId: string,
+    userId: string,
+  ): Promise<{ user_id: string; expires_at: Date }> {
+    await this.assertUserInActorScope(actorId, userId);
+
+    const globalRolesSelect = {
+      users_roles: {
+        where: {
+          active: true,
+          roles: { active: true, role_category: role_category.GLOBAL },
+        },
+        select: { roles: { select: { role_name: true } } },
+      },
+    } as const;
+    const [actorRecord, targetRecord] = await Promise.all([
+      this.prisma.users.findUnique({
+        where: { user_id: actorId },
+        select: globalRolesSelect,
+      }),
+      this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: globalRolesSelect,
+      }),
+    ]);
+    if (!targetRecord) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_USER_NOT_FOUND);
+    }
+    const actorRoles = this.extractRoleNames(actorRecord?.users_roles ?? []);
+    const targetRoles = this.extractRoleNames(targetRecord.users_roles);
+    if (!targetRoles.every((role) => this.actorCanCreateRole(actorRoles, role))) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+
+    if (await this.betterAuthService.isAccountActivated(userId)) {
+      throw new AppConflictException(
+        ErrorCode.ADMIN_USER_INVITATION_ALREADY_ACCEPTED,
+      );
+    }
+
+    const issuedAt = await this.betterAuthService.getInvitationIssuedAt(userId);
+    if (
+      issuedAt &&
+      Date.now() - issuedAt.getTime() < INVITATION_RESEND_COOLDOWN_MS
+    ) {
+      throw new AppException(
+        ErrorCode.ADMIN_USER_INVITATION_COOLDOWN,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    try {
+      const { expiresAt } = await this.betterAuthService.sendInvitation(userId);
+      this.logger.log(`Invitation resent: user_id=${userId} actor=${actorId}`);
+      return { user_id: userId, expires_at: expiresAt };
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) {
+        throw new AppServiceUnavailableException(
+          ErrorCode.ADMIN_USER_INVITATION_UNAVAILABLE,
+        );
+      }
+      throw err;
+    }
   }
 
   /**

@@ -87,6 +87,8 @@ describe('AdminUsersService', () => {
     createUser: jest.fn(),
     resetPasswordForEmail: jest.fn(),
     sendInvitation: jest.fn(),
+    isAccountActivated: jest.fn(),
+    getInvitationIssuedAt: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -119,6 +121,8 @@ describe('AdminUsersService', () => {
 
     service = module.get<AdminUsersService>(AdminUsersService);
 
+    mockBetterAuthService.isAccountActivated.mockResolvedValue(true);
+    mockBetterAuthService.getInvitationIssuedAt.mockResolvedValue(null);
     mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
     mockPrismaService.enrollments.findMany.mockResolvedValue([]);
     mockPrismaService.guardianships.findMany.mockResolvedValue([]);
@@ -2460,6 +2464,154 @@ describe('AdminUsersService', () => {
         expect.any(String),
         expect.any(String),
         'Juan Pérez', // no trailing space, no extra segment
+      );
+    });
+  });
+
+  describe('invitation_pending in the detail (R3.15)', () => {
+    const setup = () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
+      );
+      mockPrismaService.users.findFirst.mockResolvedValue(
+        buildAdminDetailRecord(),
+      );
+    };
+
+    it('is true while the account is not activated', async () => {
+      setup();
+      mockBetterAuthService.isAccountActivated.mockResolvedValue(false);
+
+      const detail = await service.getUserById('actor-admin', 'user-1');
+
+      expect(detail.invitation_pending).toBe(true);
+      expect(mockBetterAuthService.isAccountActivated).toHaveBeenCalledWith(
+        'user-1',
+      );
+    });
+
+    it('is false once the email is verified or a social account exists', async () => {
+      setup();
+      mockBetterAuthService.isAccountActivated.mockResolvedValue(true);
+
+      const detail = await service.getUserById('actor-admin', 'user-1');
+
+      expect(detail.invitation_pending).toBe(false);
+    });
+  });
+
+  describe('resendInvitation', () => {
+    const ACTOR = 'actor-admin-uuid';
+    const TARGET = 'target-user-uuid';
+
+    beforeEach(() => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({ roles: ['super-admin'] }),
+      );
+      // assertUserInActorScope: target is inside the actor scope.
+      mockPrismaService.users.findFirst.mockResolvedValue({ user_id: TARGET });
+      mockPrismaService.users.findUnique.mockImplementation(
+        (args: { where: { user_id: string } }) =>
+          Promise.resolve(
+            args.where.user_id === ACTOR
+              ? { users_roles: [{ roles: { role_name: 'admin' } }] }
+              : { users_roles: [{ roles: { role_name: 'pastor' } }] },
+          ),
+      );
+      mockBetterAuthService.isAccountActivated.mockResolvedValue(false);
+      mockBetterAuthService.getInvitationIssuedAt.mockResolvedValue(null);
+      mockBetterAuthService.sendInvitation.mockResolvedValue({
+        expiresAt: new Date('2026-12-01T00:00:00Z'),
+      });
+    });
+
+    it('issues a new invitation and returns its expiry (R3.9)', async () => {
+      await expect(service.resendInvitation(ACTOR, TARGET)).resolves.toEqual({
+        user_id: TARGET,
+        expires_at: new Date('2026-12-01T00:00:00Z'),
+      });
+      expect(mockBetterAuthService.sendInvitation).toHaveBeenCalledWith(TARGET);
+    });
+
+    it('S3.16 answers 404 for a user outside the actor scope or unknown, sending nothing', async () => {
+      mockPrismaService.users.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.resendInvitation(ACTOR, TARGET),
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_NOT_FOUND });
+      expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
+    });
+
+    it('S3.16 answers 403 when the actor cannot create the target role', async () => {
+      mockPrismaService.users.findUnique.mockImplementation(
+        (args: { where: { user_id: string } }) =>
+          Promise.resolve(
+            args.where.user_id === ACTOR
+              ? { users_roles: [{ roles: { role_name: 'assistant-lf' } }] }
+              : { users_roles: [{ roles: { role_name: 'admin' } }] },
+          ),
+      );
+
+      await expect(
+        service.resendInvitation(ACTOR, TARGET),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
+    });
+
+    it('S3.6 answers 409 for an already accepted invitation, with no email and no token change', async () => {
+      mockBetterAuthService.isAccountActivated.mockResolvedValue(true);
+
+      const error = await service
+        .resendInvitation(ACTOR, TARGET)
+        .catch((e: { getStatus(): number; code: ErrorCode }) => e);
+
+      expect(error.getStatus()).toBe(409);
+      expect(error.code).toBe(
+        ErrorCode.ADMIN_USER_INVITATION_ALREADY_ACCEPTED,
+      );
+      expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
+    });
+
+    it('S3.7 answers 429 inside the 60 s cooldown and allows it afterwards', async () => {
+      mockBetterAuthService.getInvitationIssuedAt.mockResolvedValue(
+        new Date(Date.now() - 30_000),
+      );
+      const error = await service
+        .resendInvitation(ACTOR, TARGET)
+        .catch((e: { getStatus(): number; code: ErrorCode }) => e);
+      expect(error.getStatus()).toBe(429);
+      expect(error.code).toBe(ErrorCode.ADMIN_USER_INVITATION_COOLDOWN);
+      expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
+
+      mockBetterAuthService.getInvitationIssuedAt.mockResolvedValue(
+        new Date(Date.now() - 61_000),
+      );
+      await expect(
+        service.resendInvitation(ACTOR, TARGET),
+      ).resolves.toMatchObject({ user_id: TARGET });
+    });
+
+    it('S3.9 answers 503 with the unavailable code when email is disabled', async () => {
+      mockBetterAuthService.sendInvitation.mockRejectedValue(
+        new ServiceUnavailableException('email disabled'),
+      );
+
+      const error = await service
+        .resendInvitation(ACTOR, TARGET)
+        .catch((e: { getStatus(): number; code: ErrorCode }) => e);
+
+      expect(error.getStatus()).toBe(503);
+      expect(error.code).toBe(ErrorCode.ADMIN_USER_INVITATION_UNAVAILABLE);
+    });
+
+    it('rethrows unexpected failures untouched', async () => {
+      mockBetterAuthService.sendInvitation.mockRejectedValue(new Error('boom'));
+
+      await expect(service.resendInvitation(ACTOR, TARGET)).rejects.toThrow(
+        'boom',
       );
     });
   });

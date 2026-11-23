@@ -56,6 +56,8 @@ import { GuardianEvidenceService } from '../guardianships/guardian-evidence.serv
 import { AdminFamilyAccessService } from './admin-family-access.service';
 import { AdminUsersService, type BulkUsersResult } from './admin-users.service';
 import { GlobalRole } from '../common/authorization/roles';
+import { Throttle } from '@nestjs/throttler';
+import { namedThrottle } from '../config/throttler.helpers';
 
 const BULK_ALLOWED_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -446,6 +448,49 @@ export class AdminUsersController {
     const data = await this.adminUsersService.createAdminUser(
       this.getActorId(req),
       dto,
+    );
+    return { status: 'success', data };
+  }
+
+  @Post('users/:userId/invitation')
+  @HttpCode(HttpStatus.OK)
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
+  @RequirePermissions('users:create')
+  // 10 resends per hour per actor (the throttler tracks the authenticated user).
+  @Throttle(namedThrottle({ ttl: 3_600_000, limit: 10 }))
+  @ApiOperation({
+    summary: 'Reenviar la invitación de administrador (token de 7 días)',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiResponse({ status: 200, description: 'Invitación reenviada' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Sin permiso o rol del usuario no creable por el actor',
+  })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({
+    status: 409,
+    description: 'ADMIN_USER_INVITATION_ALREADY_ACCEPTED',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Cooldown de 60 s o límite de 10 por hora',
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'ADMIN_USER_INVITATION_UNAVAILABLE (correo deshabilitado)',
+  })
+  async resendInvitation(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @Param('userId', ParseUuidParamPipe) userId: string,
+  ): Promise<{
+    status: 'success';
+    data: { user_id: string; expires_at: Date };
+  }> {
+    const data = await this.adminUsersService.resendInvitation(
+      this.getActorId(req),
+      userId,
     );
     return { status: 'success', data };
   }
