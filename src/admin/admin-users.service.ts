@@ -831,7 +831,9 @@ export class AdminUsersService {
     }
     const actorRoles = this.extractRoleNames(actorRecord?.users_roles ?? []);
     const targetRoles = this.extractRoleNames(targetRecord.users_roles);
-    if (!targetRoles.every((role) => this.actorCanCreateRole(actorRoles, role))) {
+    if (
+      !targetRoles.every((role) => this.actorCanCreateRole(actorRoles, role))
+    ) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
 
@@ -1065,7 +1067,9 @@ export class AdminUsersService {
       this.roleRequiresLocalField(dto.role) &&
       (dto.local_field_id === undefined || dto.local_field_id === null)
     ) {
-      throw new AppBadRequestException(ErrorCode.ADMIN_USER_LOCAL_FIELD_REQUIRED);
+      throw new AppBadRequestException(
+        ErrorCode.ADMIN_USER_LOCAL_FIELD_REQUIRED,
+      );
     }
 
     // 4. Generate temp password — never logged, exists in memory only
@@ -2325,7 +2329,11 @@ export class AdminUsersService {
     ];
     for (const slug of allowedRoles) {
       const label = AdminUsersService.ROLE_LABELS_ES[slug] ?? slug;
-      rolesData.push([slug, label, this.roleRequiresLocalField(slug) ? 'si' : 'no']);
+      rolesData.push([
+        slug,
+        label,
+        this.roleRequiresLocalField(slug) ? 'si' : 'no',
+      ]);
     }
 
     const rolesSheet = XLSX.utils.aoa_to_sheet(rolesData);

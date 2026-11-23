@@ -1164,18 +1164,14 @@ export class BetterAuthService implements IBetterAuthService {
     });
 
     if (!verification) {
-      throw new AppBadRequestException(
-        ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_INVALID);
     }
 
     if (verification.expiresAt < new Date()) {
       await this.prisma.verification.delete({
         where: { id: verification.id },
       });
-      throw new AppBadRequestException(
-        ErrorCode.AUTH_INVITATION_TOKEN_EXPIRED,
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_EXPIRED);
     }
 
     const userId = verification.identifier.slice(
@@ -1194,18 +1190,14 @@ export class BetterAuthService implements IBetterAuthService {
       await this.prisma.verification.deleteMany({
         where: { identifier: verification.identifier },
       });
-      throw new AppBadRequestException(
-        ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_INVALID);
     }
 
     // A deactivated account cannot be activated through an old invitation.
     // Same response as any invalid token (no hint the account exists) and
     // nothing changes: no password, no email_verified, the token stays as is.
     if (dbUser.active === false) {
-      throw new AppBadRequestException(
-        ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_INVALID);
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);

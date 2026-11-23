@@ -294,8 +294,7 @@ describe('SocialSignInService', () => {
   });
 
   describe('onboarding mode (same rules as POST /auth/login)', () => {
-    const signIn = () =>
-      service.signIn('google', { idToken: 't', nonce: 'n' });
+    const signIn = () => service.signIn('google', { idToken: 't', nonce: 'n' });
 
     it('club: needsPostRegistration follows complete, nothing reconciled', async () => {
       prisma.users_pr.findUnique.mockResolvedValue({ complete: false });
@@ -347,9 +346,7 @@ describe('SocialSignInService', () => {
     });
 
     it('falls back to club with a warning when the mode cannot be resolved: the sign-in still succeeds', async () => {
-      const warn = jest
-        .spyOn(Logger.prototype, 'warn')
-        .mockImplementation();
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       authorizationContext.resolveUserAuthorization.mockRejectedValue(
         new Error('redis down'),
       );

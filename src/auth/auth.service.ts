@@ -997,11 +997,10 @@ export class AuthService {
    */
   async acceptInvitation(dto: ResetPasswordDto) {
     try {
-      const { userId } =
-        await this.betterAuthService.acceptInvitationWithToken(
-          dto.token,
-          dto.password,
-        );
+      const { userId } = await this.betterAuthService.acceptInvitationWithToken(
+        dto.token,
+        dto.password,
+      );
       await this.prisma.session.deleteMany({ where: { userId } });
       await this.blacklistUserTokensBestEffort(userId, 'invitation_accept');
       this.logger.log(
@@ -1022,9 +1021,7 @@ export class AuthService {
         `Invitation accept error: ${error instanceof Error ? error.message : String(error)}`,
         error,
       );
-      throw new AppBadRequestException(
-        ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_INVALID);
     }
   }
 

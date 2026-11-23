@@ -758,9 +758,9 @@ describe('capabilities catalog', () => {
     });
 
     it('publishes only the required-Field roles the actor can assign, in role-name form', () => {
-      expect(localFieldRequiredRoles(['coordinator', 'pastor', 'user'])).toEqual(
-        ['pastor'],
-      );
+      expect(
+        localFieldRequiredRoles(['coordinator', 'pastor', 'user']),
+      ).toEqual(['pastor']);
       expect(localFieldRequiredRoles(['coordinator', 'user'])).toEqual([]);
       expect(localFieldRequiredRoles([])).toEqual([]);
       // Same form as assignable_global_roles: a subset of it.

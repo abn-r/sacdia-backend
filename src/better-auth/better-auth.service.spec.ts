@@ -1826,9 +1826,9 @@ describe('BetterAuthService', () => {
         const tokenB = tokenOfLastEmail();
 
         expect(tokenA).not.toBe(tokenB);
-        expect(store.filter((r) => r.identifier === INVITATION_ID)).toHaveLength(
-          1,
-        );
+        expect(
+          store.filter((r) => r.identifier === INVITATION_ID),
+        ).toHaveLength(1);
         await expect(
           svc.acceptInvitationWithToken(tokenA, 'NewPassword123!'),
         ).rejects.toMatchObject({

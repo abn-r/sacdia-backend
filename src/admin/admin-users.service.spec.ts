@@ -2252,7 +2252,9 @@ describe('AdminUsersService', () => {
       expect(mockBetterAuthService.sendInvitation).toHaveBeenCalledWith(
         'new-user-uuid',
       );
-      expect(mockBetterAuthService.resetPasswordForEmail).not.toHaveBeenCalled();
+      expect(
+        mockBetterAuthService.resetPasswordForEmail,
+      ).not.toHaveBeenCalled();
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
     });
 
@@ -2429,7 +2431,7 @@ describe('AdminUsersService', () => {
         async (ops: Promise<unknown>[]) => {
           const settled = await Promise.allSettled(ops);
           const failed = settled.find((r) => r.status === 'rejected');
-          if (failed) throw (failed as PromiseRejectedResult).reason;
+          if (failed) throw failed.reason;
           return settled;
         },
       );
@@ -2626,9 +2628,7 @@ describe('AdminUsersService', () => {
           .catch((e: { getStatus(): number; code: ErrorCode }) => e);
 
         expect(error.getStatus()).toBe(400);
-        expect(error.code).toBe(
-          ErrorCode.ADMIN_USER_INVITATION_NOT_APPLICABLE,
-        );
+        expect(error.code).toBe(ErrorCode.ADMIN_USER_INVITATION_NOT_APPLICABLE);
         expect(mockBetterAuthService.isAccountActivated).not.toHaveBeenCalled();
         expect(
           mockBetterAuthService.getInvitationIssuedAt,
@@ -2664,9 +2664,7 @@ describe('AdminUsersService', () => {
         .catch((e: { getStatus(): number; code: ErrorCode }) => e);
 
       expect(error.getStatus()).toBe(409);
-      expect(error.code).toBe(
-        ErrorCode.ADMIN_USER_INVITATION_ALREADY_ACCEPTED,
-      );
+      expect(error.code).toBe(ErrorCode.ADMIN_USER_INVITATION_ALREADY_ACCEPTED);
       expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
     });
 
@@ -2960,9 +2958,9 @@ describe('AdminUsersService', () => {
         status: 'error',
         error_code: 'LOCAL_FIELD_REQUIRED',
       });
-      expect(
-        result.results.filter((r) => r.status === 'success'),
-      ).toHaveLength(4);
+      expect(result.results.filter((r) => r.status === 'success')).toHaveLength(
+        4,
+      );
       expect(mockBetterAuthService.createUser).toHaveBeenCalledTimes(4);
     });
 
@@ -3001,9 +2999,7 @@ describe('AdminUsersService', () => {
 
       const result = await service.bulkCreateAdminUsers(
         'actor-admin-uuid',
-        buildXlsxBuffer([
-          ['p1@x.com', 'Uno', 'Pastor', '', 'user', 1, 12, 34],
-        ]),
+        buildXlsxBuffer([['p1@x.com', 'Uno', 'Pastor', '', 'user', 1, 12, 34]]),
         XLSX_MIME,
       );
 
