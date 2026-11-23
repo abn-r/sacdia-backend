@@ -11,6 +11,8 @@ import {
 } from '../../common/services/file-storage.service';
 import type { FileStorageService } from '../../common/services/file-storage.service';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
+import type { OnboardingMode } from '../../common/authorization/onboarding-mode';
+import { OnboardingModeService } from '../../post-registration/onboarding/onboarding-mode.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   fireEvent,
@@ -55,6 +57,8 @@ export interface SocialSignInResult {
     connectedProviders: string[];
   };
   needsPostRegistration: boolean;
+  /** `club` | `club_exempt` | `panel_only`, same field as POST /auth/login. */
+  onboarding_mode: OnboardingMode;
 }
 
 /** Access JWT lifetime. Mirrors `AuthService.JWT_TTL_SECONDS` (private there). */
@@ -81,6 +85,7 @@ export class SocialSignInService {
     private readonly tokenBlacklist: TokenBlacklistService,
     private readonly supervisedResolver: SupervisedPrincipalResolver,
     private readonly actingForCache: ActingForCache,
+    private readonly onboardingMode: OnboardingModeService,
     // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
     // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
@@ -161,6 +166,10 @@ export class SocialSignInService {
         select: { providerId: true },
       }),
     ]);
+    // Same rule as password login: derived on every sign-in, reconciled for
+    // club-exempt users, and never a reason for the sign-in to fail.
+    const { mode, needsPostRegistration } =
+      await this.onboardingMode.resolveForLogin(userId, userPr?.complete);
     const email = user?.email ?? identity.email!;
     const accessToken = this.betterAuth.signJwt(
       { id: userId, email },
@@ -191,7 +200,8 @@ export class SocialSignInService {
           .map((a) => a.providerId)
           .filter((p) => p !== 'credential'),
       },
-      needsPostRegistration: !userPr?.complete,
+      needsPostRegistration,
+      onboarding_mode: mode,
     };
   }
 

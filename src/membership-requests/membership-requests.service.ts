@@ -483,7 +483,20 @@ export class MembershipRequestsService {
    * the club/section selection step. This is user-owned self-service, not an
    * administrative rejection.
    */
-  async cancelPendingForUser(userId: string, actorId: string) {
+  /**
+   * Cancels the user's pending membership request and reopens club selection.
+   *
+   * `preserveCompletion` (a `club_exempt` user, decided by the caller from the
+   * onboarding mode WITHOUT the pending grants): their registration never
+   * depended on a club, so only `club_selection_complete` and
+   * `active_club_assignment_id` are reset and `complete` is never revoked.
+   * Default (club users): registration reopens as before.
+   */
+  async cancelPendingForUser(
+    userId: string,
+    actorId: string,
+    options: { preserveCompletion?: boolean } = {},
+  ) {
     const now = new Date();
 
     const cancelledAssignment = await this.prisma.$transaction(async (tx) => {
@@ -522,12 +535,17 @@ export class MembershipRequestsService {
 
       await tx.users_pr.update({
         where: { user_id: userId },
-        data: {
-          club_selection_complete: false,
-          complete: false,
-          date_completed: null,
-          active_club_assignment_id: null,
-        },
+        data: options.preserveCompletion
+          ? {
+              club_selection_complete: false,
+              active_club_assignment_id: null,
+            }
+          : {
+              club_selection_complete: false,
+              complete: false,
+              date_completed: null,
+              active_club_assignment_id: null,
+            },
       });
 
       return {

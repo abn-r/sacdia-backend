@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createRemoteJWKSet } from 'jose';
 import { BetterAuthModule } from '../../better-auth/better-auth.module';
 import { GuardianshipsModule } from '../../guardianships/guardianships.module';
+import { OnboardingModeModule } from '../../post-registration/onboarding/onboarding-mode.module';
 import { ActingForModule } from '../acting-for/acting-for.module';
 import {
   AppleIdTokenVerifier,
@@ -32,7 +33,13 @@ const JWKS_OPTIONS = { timeoutDuration: 5_000 };
  */
 @Module({
   // The supervised classification and the guardian security notices.
-  imports: [BetterAuthModule, ActingForModule, GuardianshipsModule],
+  // OnboardingModeModule is lower-level (imports only ActingForModule): no cycle.
+  imports: [
+    BetterAuthModule,
+    ActingForModule,
+    GuardianshipsModule,
+    OnboardingModeModule,
+  ],
   controllers: [SocialSignInController],
   providers: [
     {

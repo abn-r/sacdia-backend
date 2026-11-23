@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AccountDeletionService } from './account-deletion.service';
+import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -13,6 +14,7 @@ describe('AuthController', () => {
     logout: jest.fn(),
     requestPasswordReset: jest.fn(),
     confirmPasswordReset: jest.fn(),
+    acceptInvitation: jest.fn(),
     sendVerificationEmail: jest.fn(),
     confirmEmailVerification: jest.fn(),
     updateOwnPassword: jest.fn(),
@@ -181,6 +183,35 @@ describe('AuthController', () => {
     });
   });
 
+  describe('acceptInvitation', () => {
+    it('delegates to authService.acceptInvitation with the same DTO as password reset', async () => {
+      const dto = { token: 'invite-token', password: 'NewPassword123!' };
+      const expected = {
+        success: true,
+        message: 'Contraseña creada. Inicie sesión',
+      };
+      mockAuthService.acceptInvitation.mockResolvedValue(expected);
+
+      const result = await controller.acceptInvitation(dto);
+
+      expect(mockAuthService.acceptInvitation).toHaveBeenCalledWith(dto);
+      expect(mockAuthService.confirmPasswordReset).not.toHaveBeenCalled();
+      expect(result).toEqual(expected);
+    });
+
+    it('is public and throttled to 5 per minute (R3.5)', () => {
+      const handler = AuthController.prototype.acceptInvitation;
+
+      expect(Reflect.getMetadata(IS_PUBLIC_KEY, handler)).toBe(true);
+      for (const name of ['short', 'medium', 'long']) {
+        expect(Reflect.getMetadata(`THROTTLER:LIMIT${name}`, handler)).toBe(5);
+        expect(Reflect.getMetadata(`THROTTLER:TTL${name}`, handler)).toBe(
+          60_000,
+        );
+      }
+    });
+  });
+
   describe('sendVerificationEmail', () => {
     it('should delegate to authService.sendVerificationEmail with userId from JWT', async () => {
       const currentUser = { userId: 'user-123' };
@@ -318,6 +349,27 @@ describe('AuthController', () => {
       ]);
       expect(result.data.authorization.territory.level).toBe('open');
       expect(result.data.authorization.assignable_global_roles).toEqual([]);
+    });
+
+    it('S1.17 passes onboarding_mode through additively, next to post_register_complete', async () => {
+      const currentUser = { userId: 'user-123', kind: 'user' } as any;
+      const expected = {
+        status: 'success',
+        data: {
+          user_id: 'user-123',
+          post_register_complete: false,
+          onboarding_mode: 'club_exempt',
+        },
+      };
+      mockAuthService.getProfile.mockResolvedValue(expected);
+
+      const result = await controller.getProfile(currentUser);
+
+      expect(result).toBe(expected);
+      expect(result.data).toMatchObject({
+        post_register_complete: false,
+        onboarding_mode: 'club_exempt',
+      });
     });
   });
 

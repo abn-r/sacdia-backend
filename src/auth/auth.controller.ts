@@ -257,6 +257,32 @@ export class AuthController {
     return this.authService.confirmPasswordReset(dto);
   }
 
+  @Public()
+  @Post('invitation/accept')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
+  @ApiOperation({ summary: 'Aceptar invitación de administrador' })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Contraseña creada y correo verificado. No emite sesión ni JWT; el cliente debe iniciar sesión',
+    schema: {
+      example: {
+        success: true,
+        message: 'Contraseña creada. Inicie sesión',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'AUTH_INVITATION_TOKEN_INVALID, AUTH_INVITATION_TOKEN_EXPIRED o contraseña inválida',
+  })
+  async acceptInvitation(@Body() dto: ResetPasswordDto) {
+    return this.authService.acceptInvitation(dto);
+  }
+
   @Post('verify-email/send')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
@@ -422,6 +448,13 @@ export class AuthController {
                     'Roles globales que el actor puede asignar al crear usuarios (tier inferior al suyo), ordenados ascendente. Vacío fuera de los tiers administrativos.',
                   example: ['coordinator', 'pastor', 'user'],
                 },
+                local_field_required_roles: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description:
+                    'Subconjunto de assignable_global_roles que exige un Campo Local (local_field_id) al crear el usuario. Los clientes usan esta lista y no comparan nombres de rol.',
+                  example: ['pastor'],
+                },
               },
               required: [
                 'grants',
@@ -430,6 +463,7 @@ export class AuthController {
                 'capabilities',
                 'territory',
                 'assignable_global_roles',
+                'local_field_required_roles',
               ],
             },
             post_register_complete: {

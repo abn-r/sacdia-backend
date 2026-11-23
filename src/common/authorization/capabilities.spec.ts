@@ -7,6 +7,7 @@ import {
   computeActorAuthorizationSummary,
   computeCapabilities,
   computeTerritory,
+  localFieldRequiredRoles,
   type CapabilityKey,
 } from './capabilities';
 import { CAPABILITY_KEYS } from './generated/capability-keys';
@@ -137,6 +138,7 @@ const ACTORS: Array<{
     assignable: sorted([...T5, ...LF, ...UNION, ...DIA, 'admin']),
     capabilities: [
       'admin_panel.access',
+      'app.clubless_surface',
       'audit.read_system',
       'camporee_orders.configure_offering',
       'camporee_orders.review_payment',
@@ -184,6 +186,7 @@ const ACTORS: Array<{
     assignable: sorted([...T5, ...LF, ...UNION, ...DIA]),
     capabilities: [
       'admin_panel.access',
+      'app.clubless_surface',
       'catalogs.edit',
       'certificates.review_imports',
       'club_enrollments.validate',
@@ -222,6 +225,7 @@ const ACTORS: Array<{
     assignable: [],
     capabilities: [
       'admin_panel.access',
+      'app.clubless_surface',
       'camporee_orders.configure_offering',
       'catalogs.edit',
       'certificates.review_imports',
@@ -253,6 +257,7 @@ const ACTORS: Array<{
     assignable: sorted(T5),
     capabilities: [
       'admin_panel.access',
+      'app.clubless_surface',
       'camporee_orders.configure_offering',
       'camporee_orders.review_payment',
       'camporee_supplies.configure',
@@ -343,6 +348,7 @@ const ACTORS: Array<{
     capabilities: [
       'admin_panel.access',
       'admin_panel.pastor_only',
+      'app.clubless_surface',
       'club_enrollments.validate',
       'investiture.authorize_requests',
       'service_credentials.review',
@@ -360,6 +366,7 @@ const ACTORS: Array<{
     assignable: [],
     capabilities: [
       'admin_panel.access',
+      'app.clubless_surface',
       'club_enrollments.validate',
       'coordination.hub_view',
       'service_credentials.review',
@@ -465,7 +472,7 @@ describe('capabilities catalog', () => {
       ...CAPABILITY_KEYS,
     ]);
     expect([...CAPABILITY_KEYS]).toEqual(sorted([...CAPABILITY_KEYS]));
-    expect(CAPABILITY_KEYS).toHaveLength(52);
+    expect(CAPABILITY_KEYS).toHaveLength(53);
   });
 
   describe.each(ACTORS)(
@@ -482,11 +489,15 @@ describe('capabilities catalog', () => {
         expect(assignableGlobalRoles(fixture)).toEqual(assignable);
       });
 
-      it('summarises the three blocks in one pass', () => {
+      it('summarises the four blocks in one pass', () => {
         expect(computeActorAuthorizationSummary(fixture)).toEqual({
           capabilities,
           territory,
           assignable_global_roles: assignable,
+          // R4.3: assignable roles that need a Field (pastor today).
+          local_field_required_roles: assignable.includes('pastor')
+            ? ['pastor']
+            : [],
         });
       });
     },
@@ -562,6 +573,40 @@ describe('capabilities catalog', () => {
       });
       expect(buildCapabilityContext(fixture).activeClubRole).toBeUndefined();
       expect(computeCapabilities(fixture)).toEqual([]);
+    });
+
+    it('app.clubless_surface is the role matrix of pastor-only plus the coordination hub', () => {
+      const surface = (...globalRoles: string[]) =>
+        CAPABILITY_DEFINITIONS['app.clubless_surface'](
+          buildCapabilityContext(resolvedFor({ globalRoles })),
+        );
+      for (const role of [
+        'pastor',
+        'super-admin',
+        'admin',
+        'assistant-admin',
+        'coordinator',
+        'zone-coordinator',
+        'general-coordinator',
+        'director-lf',
+        'assistant-lf',
+      ]) {
+        expect([role, surface(role)]).toEqual([role, true]);
+      }
+      for (const role of [
+        'user',
+        'director-union',
+        'assistant-union',
+        'director-dia',
+        'assistant-dia',
+      ]) {
+        expect([role, surface(role)]).toEqual([role, false]);
+      }
+      expect(surface()).toBe(false);
+      // pastor + union: not pastor-only and no hub role -> no surface.
+      expect(surface('pastor', 'director-union')).toBe(false);
+      // pastor + user is a pastor with the base role only: not pastor-only.
+      expect(surface('pastor', 'user')).toBe(false);
     });
 
     it('admin_panel.pastor_only needs every global role to be pastor', () => {
@@ -708,7 +753,22 @@ describe('capabilities catalog', () => {
           local_field_id: null,
         },
         assignable_global_roles: [],
+        local_field_required_roles: [],
       });
+    });
+
+    it('publishes only the required-Field roles the actor can assign, in role-name form', () => {
+      expect(
+        localFieldRequiredRoles(['coordinator', 'pastor', 'user']),
+      ).toEqual(['pastor']);
+      expect(localFieldRequiredRoles(['coordinator', 'user'])).toEqual([]);
+      expect(localFieldRequiredRoles([])).toEqual([]);
+      // Same form as assignable_global_roles: a subset of it.
+      const assignable = assignableGlobalRoles(
+        resolvedFor({ globalRoles: ['director-lf'] }),
+      );
+      const required = localFieldRequiredRoles(assignable);
+      expect(required.every((role) => assignable.includes(role))).toBe(true);
     });
 
     it('does not mutate its input', () => {

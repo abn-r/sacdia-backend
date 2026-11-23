@@ -1,4 +1,5 @@
 import {
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -7,8 +8,10 @@ import {
 import {
   AppBadRequestException,
   AppConflictException,
+  AppException,
   AppForbiddenException,
   AppNotFoundException,
+  AppServiceUnavailableException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { randomBytes } from 'crypto';
@@ -37,6 +40,7 @@ import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { CoordinationService } from '../coordination/coordination.service';
 import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
 import { resolveAllowedTargetRoles } from '../common/authorization/user-role-tiers';
+import { ROLES_REQUIRING_LOCAL_FIELD } from '../common/authorization/role-sets';
 import {
   memberInDivisionWhere,
   memberInLocalFieldWhere,
@@ -596,8 +600,13 @@ interface AdminUserDetail extends AdminUserListItem {
   guardianships: AdminGuardianshipsBlock | null;
   family_access: AdminFamilyAccessBlock | null;
   post_registration: MinimalPostRegistrationBlock | null;
+  /** True while the admin invitation has not been accepted (R3.15). */
+  invitation_pending: boolean;
   scope: ScopeMeta;
 }
+
+/** Minimum gap between two invitations for the same user (R3.11). */
+const INVITATION_RESEND_COOLDOWN_MS = 60_000;
 
 // NOTE: xlsx 0.18.x is the last Apache-2.0 licensed release available on npm.
 // Newer versions are CDN-only. The package has known prototype-pollution advisories
@@ -771,8 +780,99 @@ export class AdminUsersService {
       guardianships,
       family_access: familyAccess,
       post_registration: sensitiveBlocks.post_registration,
+      // An invitation only makes sense for an active account with an email:
+      // minors/dependents have none and a deactivated user must not be invited.
+      invitation_pending:
+        user.active === true &&
+        !!user.email &&
+        !(await this.betterAuthService.isAccountActivated(user.user_id)),
       scope: this.toScopeMeta(scope),
     };
+  }
+
+  /**
+   * Resends the admin invitation (R3.9-R3.12, R3.14).
+   *
+   * Order: 404 (target missing or outside the actor scope) -> 403 (the actor
+   * cannot create the target's role) -> 400 (no email or deactivated; nothing
+   * to invite) -> 409 (already accepted) -> 429
+   * (60 s cooldown) -> 503 (email unavailable; BetterAuthService throws before
+   * touching the previous token, so it stays valid).
+   */
+  async resendInvitation(
+    actorId: string,
+    userId: string,
+  ): Promise<{ user_id: string; expires_at: Date }> {
+    await this.assertUserInActorScope(actorId, userId);
+
+    const globalRolesSelect = {
+      email: true,
+      active: true,
+      users_roles: {
+        where: {
+          active: true,
+          roles: { active: true, role_category: role_category.GLOBAL },
+        },
+        select: { roles: { select: { role_name: true } } },
+      },
+    } as const;
+    const [actorRecord, targetRecord] = await Promise.all([
+      this.prisma.users.findUnique({
+        where: { user_id: actorId },
+        select: globalRolesSelect,
+      }),
+      this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: globalRolesSelect,
+      }),
+    ]);
+    if (!targetRecord) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_USER_NOT_FOUND);
+    }
+    const actorRoles = this.extractRoleNames(actorRecord?.users_roles ?? []);
+    const targetRoles = this.extractRoleNames(targetRecord.users_roles);
+    if (
+      !targetRoles.every((role) => this.actorCanCreateRole(actorRoles, role))
+    ) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+
+    // Nothing to invite: no mailbox (minors/dependents) or a deactivated account.
+    if (!targetRecord.email || targetRecord.active !== true) {
+      throw new AppBadRequestException(
+        ErrorCode.ADMIN_USER_INVITATION_NOT_APPLICABLE,
+      );
+    }
+
+    if (await this.betterAuthService.isAccountActivated(userId)) {
+      throw new AppConflictException(
+        ErrorCode.ADMIN_USER_INVITATION_ALREADY_ACCEPTED,
+      );
+    }
+
+    const issuedAt = await this.betterAuthService.getInvitationIssuedAt(userId);
+    if (
+      issuedAt &&
+      Date.now() - issuedAt.getTime() < INVITATION_RESEND_COOLDOWN_MS
+    ) {
+      throw new AppException(
+        ErrorCode.ADMIN_USER_INVITATION_COOLDOWN,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    try {
+      const { expiresAt } = await this.betterAuthService.sendInvitation(userId);
+      this.logger.log(`Invitation resent: user_id=${userId} actor=${actorId}`);
+      return { user_id: userId, expires_at: expiresAt };
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) {
+        throw new AppServiceUnavailableException(
+          ErrorCode.ADMIN_USER_INVITATION_UNAVAILABLE,
+        );
+      }
+      throw err;
+    }
   }
 
   /**
@@ -910,8 +1010,8 @@ export class AdminUsersService {
    *  4. Generate cryptographically random temp password (memory only, never logged)
    *  5. Create user via BetterAuthService.createUser — discard session/accessToken
    *  6. Update users profile fields (country, union, local_field, access flags)
-   *  7. Assign global role via users_roles
-   *  8. Trigger password-reset email so the new user can set their own password
+   *  7. Assign global role via users_roles and create users_pr (one transaction)
+   *  8. Send the 7-day invitation so the new user can set their own password
    *  9. Return { user_id, email, invite_email_sent }
    */
   async createAdminUser(
@@ -961,6 +1061,17 @@ export class AdminUsersService {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
 
+    // 3b. Roles that cannot exist without a Field. Checked BEFORE Better Auth
+    // creates anything, so a rejection leaves no user, role, users_pr or email.
+    if (
+      this.roleRequiresLocalField(dto.role) &&
+      (dto.local_field_id === undefined || dto.local_field_id === null)
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.ADMIN_USER_LOCAL_FIELD_REQUIRED,
+      );
+    }
+
     // 4. Generate temp password — never logged, exists in memory only
     // 18 random bytes → 24 base64url chars + fixed suffix satisfies most policies
     const tempPassword = `${randomBytes(18).toString('base64url')}Aa1!`;
@@ -999,26 +1110,38 @@ export class AdminUsersService {
       };
     }
 
-    // 7. Assign global role — run profile update and role assignment atomically
-    await this.prisma.$transaction([
-      this.prisma.users.update({
-        where: { user_id: newUserId },
-        data: profileData,
-      }),
-      this.prisma.users_roles.create({
-        data: {
-          user_id: newUserId,
-          role_id: matchedRole.role_id,
-          active: true,
-        },
-      }),
-    ]);
+    // 7. Profile update, role assignment and the post-registration row run
+    // atomically. `skipDuplicates` keeps the insert idempotent. If any of them
+    // fails the whole transaction rolls back and the user Better Auth just
+    // created is removed too, so nothing half-created is left behind.
+    try {
+      await this.prisma.$transaction([
+        this.prisma.users.update({
+          where: { user_id: newUserId },
+          data: profileData,
+        }),
+        this.prisma.users_roles.create({
+          data: {
+            user_id: newUserId,
+            role_id: matchedRole.role_id,
+            active: true,
+          },
+        }),
+        this.prisma.users_pr.createMany({
+          data: [{ user_id: newUserId }],
+          skipDuplicates: true,
+        }),
+      ]);
+    } catch (err) {
+      await this.discardPartiallyCreatedUser(newUserId);
+      throw err;
+    }
 
-    // 8. Send reset-password email so the user can set their own password
+    // 8. Send the 7-day invitation so the user can set their own password
     // If email is disabled, catch gracefully — user is already created
     let invite_email_sent = true;
     try {
-      await this.betterAuthService.resetPasswordForEmail(dto.email);
+      await this.betterAuthService.sendInvitation(newUserId);
     } catch (err) {
       if (err instanceof ServiceUnavailableException) {
         invite_email_sent = false;
@@ -1037,6 +1160,30 @@ export class AdminUsersService {
     );
 
     return { user_id: newUserId, email: dto.email, invite_email_sent };
+  }
+
+  /** True for roles that need a Field (see `ROLES_REQUIRING_LOCAL_FIELD`). */
+  private roleRequiresLocalField(role: string): boolean {
+    return (ROLES_REQUIRING_LOCAL_FIELD as readonly string[]).includes(role);
+  }
+
+  /**
+   * Best-effort removal of a user whose creation transaction failed after
+   * Better Auth had already inserted the row. Cascades to account, session and
+   * users_pr. A failure here is logged, never thrown over the original error.
+   */
+  private async discardPartiallyCreatedUser(userId: string): Promise<void> {
+    try {
+      await this.prisma.users.delete({ where: { user_id: userId } });
+    } catch (cleanupError) {
+      this.logger.error(
+        `Could not remove partially created user ${userId}: ${
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : String(cleanupError)
+        }`,
+      );
+    }
   }
 
   private async resolveActiveEcclesiasticalYearId(): Promise<number | null> {
@@ -2003,6 +2150,19 @@ export class AdminUsersService {
         continue;
       }
 
+      // Roles that need a Field: report the row, keep processing the rest.
+      if (this.roleRequiresLocalField(role) && localFieldId === undefined) {
+        results.push({
+          row: rowNumber,
+          email: rawEmail,
+          status: 'error',
+          error_code: 'LOCAL_FIELD_REQUIRED',
+          error_message: `El rol ${role} requiere local_field_id`,
+        });
+        failed++;
+        continue;
+      }
+
       // Detect duplicate within this file
       if (seenEmails.has(rawEmail)) {
         results.push({
@@ -2053,6 +2213,17 @@ export class AdminUsersService {
             status: 'error',
             error_code: 'EMAIL_ALREADY_IN_USE',
             error_message: 'El email ya está registrado en el sistema',
+          });
+        } else if (
+          err instanceof AppBadRequestException &&
+          err.code === ErrorCode.ADMIN_USER_LOCAL_FIELD_REQUIRED
+        ) {
+          results.push({
+            row: rowNumber,
+            email: rawEmail,
+            status: 'error',
+            error_code: 'LOCAL_FIELD_REQUIRED',
+            error_message: `El rol ${role} requiere local_field_id`,
           });
         } else if (err instanceof AppForbiddenException) {
           results.push({
@@ -2151,10 +2322,18 @@ export class AdminUsersService {
     const usersSheet = XLSX.utils.aoa_to_sheet(usersData);
     XLSX.utils.book_append_sheet(wb, usersSheet, 'Usuarios');
 
-    const rolesData: Array<[string, string]> = [['slug', 'etiqueta']];
+    // `requiere_campo_local`: 'si' when the role cannot be created without
+    // local_field_id (published to the admin as local_field_required_roles).
+    const rolesData: Array<[string, string, string]> = [
+      ['slug', 'etiqueta', 'requiere_campo_local'],
+    ];
     for (const slug of allowedRoles) {
       const label = AdminUsersService.ROLE_LABELS_ES[slug] ?? slug;
-      rolesData.push([slug, label]);
+      rolesData.push([
+        slug,
+        label,
+        this.roleRequiresLocalField(slug) ? 'si' : 'no',
+      ]);
     }
 
     const rolesSheet = XLSX.utils.aoa_to_sheet(rolesData);

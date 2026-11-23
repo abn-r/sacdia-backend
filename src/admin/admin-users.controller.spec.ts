@@ -32,6 +32,7 @@ describe('AdminUsersController', () => {
     updateUser: jest.fn(),
     createAdminUser: jest.fn(),
     assertUserInActorScope: jest.fn(),
+    resendInvitation: jest.fn(),
   };
   const mockGuardianEvidence = { getForAdmin: jest.fn() };
   const mockFamilyAccess = {
@@ -64,6 +65,46 @@ describe('AdminUsersController', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('resendInvitation', () => {
+    const handler = AdminUsersController.prototype.resendInvitation;
+
+    it('delegates with the actor id and wraps the data', async () => {
+      const data = { user_id: 'u-1', expires_at: new Date('2026-12-01') };
+      mockAdminUsersService.resendInvitation.mockResolvedValue(data);
+
+      const result = await controller.resendInvitation(
+        { user: { sub: 'actor-1' } } as any,
+        'u-1',
+      );
+
+      expect(mockAdminUsersService.resendInvitation).toHaveBeenCalledWith(
+        'actor-1',
+        'u-1',
+      );
+      expect(result).toEqual({ status: 'success', data });
+    });
+
+    it('uses the user-creation roles and permission, without an acting scope', () => {
+      expect(Reflect.getMetadata(GLOBAL_ROLES_KEY, handler)).toEqual([
+        ...USER_MANAGEMENT_ROLES,
+      ]);
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+        permissions: ['users:create'],
+        mode: 'all',
+      });
+      expect(Reflect.getMetadata('acting_scope', handler)).toBeUndefined();
+    });
+
+    it('is limited to 10 per hour per actor', () => {
+      for (const name of ['short', 'medium', 'long']) {
+        expect(Reflect.getMetadata(`THROTTLER:LIMIT${name}`, handler)).toBe(10);
+        expect(Reflect.getMetadata(`THROTTLER:TTL${name}`, handler)).toBe(
+          3_600_000,
+        );
+      }
+    });
   });
 
   it('should be defined', () => {

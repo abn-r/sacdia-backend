@@ -18,6 +18,7 @@ import { LegalModule } from '../legal/legal.module';
 import { ActingForModule } from './acting-for/acting-for.module';
 import { GuardianshipsModule } from '../guardianships/guardianships.module';
 import { LoginFailureCounter } from './login-failure-counter';
+import { OnboardingModeModule } from '../post-registration/onboarding/onboarding-mode.module';
 import { LinkedDeviceModule } from './device/linked-device.module';
 import { DeviceAuthController } from './device/device-auth.controller';
 
@@ -46,6 +47,9 @@ import { DeviceAuthController } from './device/device-auth.controller';
     LegalModule,
     // ActingForResolver (principal substitution in JwtStrategy) + epoch cache.
     ActingForModule,
+    // OnboardingModeService: login and /auth/me publish `onboarding_mode`.
+    // Lower-level module (imports only ActingForModule): no cycle.
+    OnboardingModeModule,
     // GuardianshipLifecycleService: account deletion detaches the guardian's
     // dependents in the same transaction. Dependency is Auth -> Guardianships
     // only (GuardianshipsModule never imports AuthModule).

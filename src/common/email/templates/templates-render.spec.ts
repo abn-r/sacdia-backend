@@ -23,6 +23,7 @@ const EXPECTED_TEMPLATES = [
   'DataExportReadyEmail',
   'EmailVerificationEmail',
   'PasswordResetEmail',
+  'InvitationEmail',
   'AccountDeletionConfirmedEmail',
   'CronAlertEmail',
   'MajorityReleaseEmail',
@@ -65,6 +66,7 @@ const { Layout } = t('_layout');
 const { DataExportReadyEmail } = t('data-export-ready');
 const { EmailVerificationEmail } = t('email-verification');
 const { PasswordResetEmail } = t('password-reset');
+const { InvitationEmail } = t('invitation');
 const { AccountDeletionConfirmedEmail } = t('account-deletion-confirmed');
 const { CronAlertEmail } = t('cron-alert');
 const { InvestitureNoticeEmail } = t('investiture-notice');
@@ -78,6 +80,7 @@ const builders = {
   EmailVerificationEmail: (lang) => h(EmailVerificationEmail, {
     verificationUrl: 'https://example.com/verify', userName: 'Ana', lang }),
   PasswordResetEmail: (lang) => h(PasswordResetEmail, { resetUrl: 'https://example.com/reset', lang }),
+  InvitationEmail: (lang) => h(InvitationEmail, { invitationUrl: 'https://example.com/invite?token=abc', lang }),
   AccountDeletionConfirmedEmail: (lang) => h(AccountDeletionConfirmedEmail, { lang }),
   CronAlertEmail: (lang) => h(CronAlertEmail, {
     jobName: 'nightly-job', condition: 'consecutive_failures', conditionDetail: '3 fallos',
@@ -95,7 +98,7 @@ const builders = {
       const el = build(lang);
       const html = await render(el);
       const text = await render(el, { plainText: true });
-      results.push({ name, lang, htmlLength: html.length, textLength: text.length, appSchemeLink: html.includes('sacdia://') });
+      results.push({ name, lang, htmlLength: html.length, textLength: text.length, appSchemeLink: html.includes('sacdia://'), sevenDays: /\\b7\\b/.test(text), oneHour: /1 (hora|hour|heure)/.test(text), hasLink: html.includes('token=abc') });
     }
   }
   process.stdout.write('RESULTS:' + JSON.stringify(results));
@@ -132,6 +135,9 @@ describe('email templates render with the real @react-email/render', () => {
       htmlLength: number;
       textLength: number;
       appSchemeLink: boolean;
+      sevenDays: boolean;
+      oneHour: boolean;
+      hasLink: boolean;
     }>;
 
     expect([...new Set(results.map((r) => r.name))]).toEqual(
@@ -148,6 +154,50 @@ describe('email templates render with the real @react-email/render', () => {
         lang: r.lang,
         appSchemeLink: r.appSchemeLink,
       }).toEqual({ name: r.name, lang: r.lang, appSchemeLink: false });
+    }
+  });
+
+  it('renders the invitation email in every locale with the 7-day wording and the link (S3.15)', () => {
+    const run = spawnSync(process.execPath, ['-e', RENDER_SCRIPT], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, TEMPLATES_DIR },
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    expect(run.status).toBe(0);
+
+    const results = JSON.parse(
+      run.stdout.slice(run.stdout.indexOf('RESULTS:') + 'RESULTS:'.length),
+    ) as Array<{
+      name: string;
+      lang: string;
+      sevenDays: boolean;
+      oneHour: boolean;
+      hasLink: boolean;
+    }>;
+
+    const invitations = results.filter((r) => r.name === 'InvitationEmail');
+    expect(invitations.map((r) => r.lang)).toEqual(LOCALES);
+    for (const r of invitations) {
+      expect({ lang: r.lang, sevenDays: r.sevenDays }).toEqual({
+        lang: r.lang,
+        sevenDays: true,
+      });
+      expect({ lang: r.lang, oneHour: r.oneHour }).toEqual({
+        lang: r.lang,
+        oneHour: false,
+      });
+      expect({ lang: r.lang, hasLink: r.hasLink }).toEqual({
+        lang: r.lang,
+        hasLink: true,
+      });
+    }
+    // The reset email keeps its 1 hour wording (R3.4).
+    for (const r of results.filter((x) => x.name === 'PasswordResetEmail')) {
+      expect({ lang: r.lang, oneHour: r.oneHour }).toEqual({
+        lang: r.lang,
+        oneHour: true,
+      });
     }
   });
 });

@@ -7,6 +7,8 @@ import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-as
 import { buildClubAssignmentEffectivityDeps } from '../common/authorization/testing/club-assignment-effectivity.testing';
 
 const effectivityDeps = buildClubAssignmentEffectivityDeps();
+import { OnboardingModeService } from '../post-registration/onboarding/onboarding-mode.service';
+import { ActingForCache } from './acting-for/acting-for.cache';
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
@@ -86,6 +88,7 @@ describe('AuthService', () => {
       findUnique: jest.fn(),
       upsert: jest.fn(),
       createMany: jest.fn(),
+      updateMany: jest.fn(),
     },
     supervised_logins: {
       updateMany: jest.fn(),
@@ -122,6 +125,7 @@ describe('AuthService', () => {
     signOut: jest.fn(),
     resetPasswordForEmail: jest.fn(),
     resetPasswordWithToken: jest.fn(),
+    acceptInvitationWithToken: jest.fn(),
     updateOwnPassword: jest.fn(),
     updatePasswordById: jest.fn(),
     signJwt: jest.fn(),
@@ -137,6 +141,8 @@ describe('AuthService', () => {
     resolveUserAuthorization: jest.fn(),
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
+
+  const mockActingForCache = { bump: jest.fn().mockResolvedValue(undefined) };
 
   const CURRENT_YEAR_ID = 5;
   const mockEcclesiasticalYearService = {
@@ -278,6 +284,9 @@ describe('AuthService', () => {
     mockPrismaService.supervised_logins.updateMany
       .mockReset()
       .mockResolvedValue({ count: 1 });
+    mockPrismaService.users_pr.updateMany
+      .mockReset()
+      .mockResolvedValue({ count: 0 });
     mockCountryAgePolicy.getPolicy.mockReset().mockResolvedValue({
       minSelfLoginAge: 13,
       ageOfMajority: 18,
@@ -346,6 +355,8 @@ describe('AuthService', () => {
           useValue: effectivityDeps.policy,
         },
         { provide: TemporalContextFactory, useValue: effectivityDeps.factory },
+        OnboardingModeService,
+        { provide: ActingForCache, useValue: mockActingForCache },
       ],
     }).compile();
 
@@ -860,7 +871,156 @@ describe('AuthService', () => {
             personal_info_complete: false,
             club_selection_complete: false,
           },
+          onboarding_mode: 'club',
         },
+      });
+    });
+
+    describe('onboarding mode (R1.4, R1.9)', () => {
+      const loginUser = (usersPr: Record<string, boolean> | null) => ({
+        user_id: 'user-123',
+        email: loginDto.email,
+        name: 'Juan',
+        paternal_last_name: 'Garcia',
+        maternal_last_name: 'Lopez',
+        user_image: null,
+        users_pr: usersPr,
+        users_roles: [],
+      });
+      const incomplete = {
+        complete: false,
+        profile_picture_complete: false,
+        personal_info_complete: false,
+        club_selection_complete: false,
+      };
+      const profileOf = (
+        globalRoles: string[],
+        clubAssignments: unknown[],
+      ) => ({
+        authorization: {
+          grants: {
+            global_roles: globalRoles.map((role_name) => ({
+              role_name,
+              permissions: [],
+              scope: {},
+            })),
+            club_assignments: clubAssignments,
+            direct_permissions: [],
+          },
+          active_assignment: { assignment_id: null },
+          effective: { permissions: [], scope: { global: {}, club: null } },
+        },
+        legacy: { roles: globalRoles },
+      });
+
+      beforeEach(() => {
+        mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+          mockBaResult,
+        );
+      });
+
+      it('club: unchanged, needsPostRegistration follows complete', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          profileOf(['user'], []),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(
+          loginUser(incomplete),
+        );
+
+        const result = await service.login(loginDto);
+
+        expect(result.data).toMatchObject({
+          onboarding_mode: 'club',
+          needsPostRegistration: true,
+        });
+        expect(mockPrismaService.users_pr.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('club_exempt: asks for the steps, and reconciles + reports complete when both are done', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          profileOf(['pastor'], []),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(
+          loginUser(incomplete),
+        );
+        const pending = await service.login(loginDto);
+        expect(pending.data).toMatchObject({
+          onboarding_mode: 'club_exempt',
+          needsPostRegistration: true,
+        });
+
+        mockPrismaService.users.findUnique.mockResolvedValue(
+          loginUser({
+            ...incomplete,
+            profile_picture_complete: true,
+            personal_info_complete: true,
+          }),
+        );
+        mockPrismaService.users_pr.updateMany.mockResolvedValue({ count: 1 });
+        const healed = await service.login(loginDto);
+
+        expect(healed.data).toMatchObject({
+          onboarding_mode: 'club_exempt',
+          needsPostRegistration: false,
+          postRegistrationStatus: { complete: true },
+        });
+        expect(
+          mockAuthorizationContextService.invalidateUserAuthorizationCache,
+        ).toHaveBeenCalledWith('user-123');
+        expect(mockActingForCache.bump).toHaveBeenCalledWith('user-123');
+      });
+
+      it('panel_only: needsPostRegistration false, stored complete reported as is, nothing written', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          profileOf(['director-union'], []),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(
+          loginUser(incomplete),
+        );
+
+        const result = await service.login(loginDto);
+
+        expect(result.data).toMatchObject({
+          onboarding_mode: 'panel_only',
+          needsPostRegistration: false,
+          postRegistrationStatus: { complete: false },
+        });
+        expect(mockPrismaService.users_pr.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('S1.9 a self-registered user (only role user, no club) is club and still needs post-registration', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          profileOf(['user'], []),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(loginUser(null));
+
+        const result = await service.login(loginDto);
+
+        expect(result.data).toMatchObject({
+          onboarding_mode: 'club',
+          needsPostRegistration: true,
+          postRegistrationStatus: null,
+        });
+      });
+
+      it('falls back to club (the behavior before the mode) when the profile cannot be resolved', async () => {
+        const warn = jest
+          .spyOn((service as any).onboardingMode.logger, 'warn')
+          .mockImplementation();
+        mockAuthorizationContextService.resolveUserAuthorization.mockRejectedValue(
+          new Error('redis down'),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(
+          loginUser(incomplete),
+        );
+
+        const result = await service.login(loginDto);
+
+        expect(result.data).toMatchObject({
+          onboarding_mode: 'club',
+          needsPostRegistration: true,
+        });
+        expect(warn).toHaveBeenCalled();
       });
     });
 
@@ -1970,6 +2130,103 @@ describe('AuthService', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // acceptInvitation()
+  // ---------------------------------------------------------------------------
+  describe('acceptInvitation', () => {
+    it('consumes the invitation, revokes sessions and JWTs, and issues no session (S3.1)', async () => {
+      mockBetterAuthService.acceptInvitationWithToken.mockResolvedValue({
+        userId: 'user-123',
+      });
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 1 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
+        undefined,
+      );
+
+      const result = await service.acceptInvitation({
+        token: 'invite-token',
+        password: 'NewPassword123!',
+      });
+
+      expect(
+        mockBetterAuthService.acceptInvitationWithToken,
+      ).toHaveBeenCalledWith('invite-token', 'NewPassword123!');
+      expect(
+        mockBetterAuthService.resetPasswordWithToken,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.session.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123' },
+      });
+      expect(
+        mockTokenBlacklistService.blacklistAllUserTokens,
+      ).toHaveBeenCalledWith('user-123', 28800);
+      expect(result).toEqual({
+        success: true,
+        message: 'Contraseña creada. Inicie sesión',
+      });
+    });
+
+    it('propagates invalid and expired codes without revoking sessions', async () => {
+      for (const code of [
+        ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+        ErrorCode.AUTH_INVITATION_TOKEN_EXPIRED,
+      ]) {
+        mockPrismaService.session.deleteMany.mockClear();
+        mockBetterAuthService.acceptInvitationWithToken.mockRejectedValue(
+          new AppBadRequestException(code),
+        );
+
+        await expect(
+          service.acceptInvitation({
+            token: 'bad-token',
+            password: 'NewPassword123!',
+          }),
+        ).rejects.toMatchObject({ code });
+        expect(mockPrismaService.session.deleteMany).not.toHaveBeenCalled();
+      }
+    });
+
+    it('answers an unexpected failure with the invalid-token code, never an existence hint', async () => {
+      mockBetterAuthService.acceptInvitationWithToken.mockRejectedValue(
+        new Error('db down'),
+      );
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.acceptInvitation({
+          token: 'invite-token',
+          password: 'NewPassword123!',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+      });
+      errorSpy.mockRestore();
+    });
+
+    it('still succeeds when the JWT blacklist write fails after the password changed', async () => {
+      mockBetterAuthService.acceptInvitationWithToken.mockResolvedValue({
+        userId: 'user-123',
+      });
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 1 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockRejectedValue(
+        new Error('Redis down'),
+      );
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.acceptInvitation({
+          token: 'invite-token',
+          password: 'NewPassword123!',
+        }),
+      ).resolves.toMatchObject({ success: true });
+      errorSpy.mockRestore();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // updatePassword()
   // ---------------------------------------------------------------------------
   describe('updatePassword', () => {
@@ -2142,6 +2399,102 @@ describe('AuthService', () => {
       );
     });
 
+    describe('onboarding_mode (R1.4, S1.16)', () => {
+      const base = (
+        globalRoles: string[],
+        clubAssignments: unknown[],
+        postRegisterComplete: boolean,
+      ) => ({
+        profile: {
+          user_id: 'u-1',
+          email: 'u@example.com',
+          name: 'U',
+          user_image: null,
+          local_field_id: null,
+        },
+        post_register_complete: postRegisterComplete,
+        authorization: {
+          grants: {
+            global_roles: globalRoles.map((role_name) => ({
+              role_name,
+              permissions: [],
+              scope: {},
+            })),
+            club_assignments: clubAssignments,
+            direct_permissions: [],
+          },
+          active_assignment: { assignment_id: null },
+          effective: { permissions: [], scope: { global: {}, club: null } },
+        },
+        legacy: {
+          roles: globalRoles,
+          permissions: [],
+          club: null,
+          club_context: {
+            active_assignment_id: null,
+            active: null,
+            available: [],
+          },
+        },
+      });
+
+      it.each([
+        ['club_exempt', ['pastor'], []],
+        ['panel_only', ['director-union'], []],
+        ['club', ['user'], []],
+        ['club', ['pastor'], [{ assignment_id: 'a', status: 'pending' }]],
+      ])(
+        'publishes %s next to post_register_complete',
+        async (mode, roles, clubs) => {
+          mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+            base(roles as string[], clubs as unknown[], false),
+          );
+
+          const result = await service.getProfile('u-1');
+
+          expect(result.data.onboarding_mode).toBe(mode);
+          expect(result.data.post_register_complete).toBe(false);
+        },
+      );
+
+      it('S1.16 follows the freshly resolved profile: no stale mode after complete flips or a club is gained', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization
+          .mockResolvedValueOnce(base(['pastor'], [], false))
+          .mockResolvedValueOnce(base(['pastor'], [], true))
+          .mockResolvedValueOnce(
+            base(['pastor'], [{ assignment_id: 'a', status: 'active' }], true),
+          );
+
+        const first = await service.getProfile('u-1');
+        const second = await service.getProfile('u-1');
+        const third = await service.getProfile('u-1');
+
+        expect([
+          first.data.onboarding_mode,
+          first.data.post_register_complete,
+        ]).toEqual(['club_exempt', false]);
+        expect([
+          second.data.onboarding_mode,
+          second.data.post_register_complete,
+        ]).toEqual(['club_exempt', true]);
+        expect(third.data.onboarding_mode).toBe('club');
+      });
+
+      it('uses the fully resolved profile, not the club-stripped one', async () => {
+        // A teen without a verified guardian is stripped of club data; the mode
+        // must still see the real assignment (club), not look club-less.
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          base(['pastor'], [{ assignment_id: 'a', status: 'active' }], false),
+        );
+
+        const result = await service.getProfile('u-1', {
+          kind: 'age_unknown_user',
+        } as never);
+
+        expect(result.data.onboarding_mode).toBe('club');
+      });
+    });
+
     describe('authorization summary (phase 7)', () => {
       const directorLfProfile = () => ({
         profile: {
@@ -2276,6 +2629,8 @@ describe('AuthService', () => {
           'user',
           'zone-coordinator',
         ]);
+        // R4.3: the roles of that list that need a Field, same name form.
+        expect(authorization.local_field_required_roles).toEqual(['pastor']);
         const capabilities = authorization.capabilities as string[];
         expect(capabilities).toEqual([...capabilities].sort());
         expect(capabilities).toEqual(
@@ -2340,6 +2695,7 @@ describe('AuthService', () => {
           local_field_id: null,
         });
         expect(authorization.assignable_global_roles).toEqual([]);
+        expect(authorization.local_field_required_roles).toEqual([]);
       });
 
       it('computes the summary after the club context is stripped for a pending teen', async () => {
@@ -3463,6 +3819,7 @@ describe('AuthService', () => {
           local_field_id: null,
         },
         assignable_global_roles: [],
+        local_field_required_roles: [],
       });
       expect(result.data.post_register_complete).toBe(true);
       expect(mockLegalService.getStatus).toHaveBeenCalledWith('user-123');
@@ -4347,6 +4704,23 @@ describe('AuthService', () => {
       mockPrismaService.verification.findFirst.mockResolvedValue({
         id: 'verification-reset-1',
         identifier: 'password-reset:juan.garcia@example.com',
+        value: validToken,
+        expiresAt: futureDate,
+      });
+
+      await expect(
+        service.confirmEmailVerification({ token: validToken }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID,
+      });
+      expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.verification.delete).not.toHaveBeenCalled();
+    });
+
+    it('should reject an invitation token without consuming it (S3.13)', async () => {
+      mockPrismaService.verification.findFirst.mockResolvedValue({
+        id: 'verification-invite-1',
+        identifier: 'admin-invitation:user-123',
         value: validToken,
         expiresAt: futureDate,
       });

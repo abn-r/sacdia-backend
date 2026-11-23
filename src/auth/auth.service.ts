@@ -75,6 +75,7 @@ import {
   type AuthPrincipal,
 } from './acting-for/auth-principal';
 import { stripClubContext } from './acting-for/strip-club-context';
+import { OnboardingModeService } from '../post-registration/onboarding/onboarding-mode.service';
 import { computeActorAuthorizationSummary } from '../common/authorization/capabilities';
 import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 import { SupervisionStateService } from '../guardianships/supervision-state.service';
@@ -89,6 +90,7 @@ const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
 
 const NON_EMAIL_VERIFICATION_PREFIXES = [
   'password-reset:',
+  'admin-invitation:',
   'totp:',
   'mfa-session:',
 ] as const;
@@ -138,6 +140,7 @@ export class AuthService {
     private readonly postRegistrationRow: PostRegistrationRowService,
     private readonly assignmentEffectivity: ClubAssignmentEffectivityPolicy,
     private readonly temporalContexts: TemporalContextFactory,
+    private readonly onboardingMode: OnboardingModeService,
     // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
     // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
@@ -487,9 +490,17 @@ export class AuthService {
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
-    const needsPostRegistration = user.users_pr
-      ? !user.users_pr.complete
-      : true;
+    // Derived on every login (never stored). A club-exempt user whose two steps
+    // are done is completed here too (idempotent), so the app never asks twice.
+    const { mode, reconciled, needsPostRegistration } =
+      await this.onboardingMode.resolveForLogin(
+        user.user_id,
+        user.users_pr?.complete,
+      );
+    const postRegistrationStatus =
+      reconciled && user.users_pr
+        ? { ...user.users_pr, complete: true }
+        : (user.users_pr ?? null);
 
     // Extract roles as flat array of strings
     const roles = (user.users_roles ?? []).map((ur) => ur.roles.role_name);
@@ -522,7 +533,8 @@ export class AuthService {
           principal,
         },
         needsPostRegistration,
-        postRegistrationStatus: user.users_pr ?? null,
+        postRegistrationStatus,
+        onboarding_mode: mode,
       },
     };
   }
@@ -977,6 +989,43 @@ export class AuthService {
   }
 
   /**
+   * Accepts an admin invitation: sets the password, verifies the email and
+   * consumes the token (one transaction in BetterAuthService), then revokes
+   * the user's sessions (admin creation leaves one open). Does not issue a
+   * session or JWT. Invalid and expired tokens answer with stable codes; the
+   * response never reveals whether an email exists.
+   */
+  async acceptInvitation(dto: ResetPasswordDto) {
+    try {
+      const { userId } = await this.betterAuthService.acceptInvitationWithToken(
+        dto.token,
+        dto.password,
+      );
+      await this.prisma.session.deleteMany({ where: { userId } });
+      await this.blacklistUserTokensBestEffort(userId, 'invitation_accept');
+      this.logger.log(
+        `Admin invitation accepted; sessions revoked for ${userId}`,
+      );
+      return {
+        success: true,
+        message: 'Contraseña creada. Inicie sesión',
+      };
+    } catch (error) {
+      if (
+        error instanceof AppBadRequestException ||
+        error instanceof ServiceUnavailableException
+      ) {
+        throw error;
+      }
+      this.logger.error(
+        `Invitation accept error: ${error instanceof Error ? error.message : String(error)}`,
+        error,
+      );
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_INVALID);
+    }
+  }
+
+  /**
    * Updates the password for the currently authenticated user (self-service).
    *
    * For admin-scoped password updates (setting another user's password without
@@ -1033,7 +1082,7 @@ export class AuthService {
    */
   private async blacklistUserTokensBestEffort(
     userId: string,
-    flow: 'password_reset' | 'password_change',
+    flow: 'password_reset' | 'password_change' | 'invitation_accept',
   ): Promise<void> {
     try {
       await this.tokenBlacklist.blacklistAllUserTokens(
@@ -1147,6 +1196,11 @@ export class AuthService {
         roles: resolved.legacy.roles,
         permissions: resolved.legacy.permissions,
         post_register_complete: resolved.post_register_complete,
+        // Derived from the FULLY resolved profile (the stripped one would make
+        // a teen or an unknown-age account look club-less). The cached profile
+        // is invalidated whenever roles, clubs or `complete` change, so the mode
+        // is never staler than `post_register_complete` next to it.
+        onboarding_mode: this.onboardingMode.modeOf(fullyResolved),
         club: resolved.legacy.club,
         club_context: resolved.legacy.club_context,
         // The dependent's own pending membership request while there is no

@@ -41,3 +41,13 @@ export const COORDINATOR_ROLES: readonly GlobalRoleName[] = [
   GlobalRole.ZONE_COORDINATOR,
   GlobalRole.GENERAL_COORDINATOR,
 ];
+
+/**
+ * Roles that cannot be created without a Field (local_field_id). The backend
+ * publishes the subset the actor may assign as
+ * `authorization.local_field_required_roles` (GET /auth/me); clients read that
+ * list and never compare role names themselves.
+ */
+export const ROLES_REQUIRING_LOCAL_FIELD: readonly GlobalRoleName[] = [
+  GlobalRole.PASTOR,
+];

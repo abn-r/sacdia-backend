@@ -5,6 +5,7 @@ import { MembershipRequestsModule } from '../membership-requests/membership-requ
 import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
 import { GuardianshipsModule } from '../guardianships/guardianships.module';
 import { ActingForModule } from '../auth/acting-for/acting-for.module';
+import { OnboardingModeModule } from './onboarding/onboarding-mode.module';
 
 @Module({
   // GuardianEvidenceService: the step-3 consent upload while acting.
@@ -15,6 +16,7 @@ import { ActingForModule } from '../auth/acting-for/acting-for.module';
     // ActingForCache: completing the post-registration moves the principal
     // epoch (the unknown-age restriction reads users_pr.complete).
     ActingForModule,
+    OnboardingModeModule,
   ],
   controllers: [PostRegistrationController],
   providers: [PostRegistrationService],

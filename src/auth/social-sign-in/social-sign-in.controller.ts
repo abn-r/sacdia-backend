@@ -60,6 +60,7 @@ export class SocialSignInController {
             connectedProviders: ['google'],
           },
           needsPostRegistration: true,
+          onboarding_mode: 'club',
         },
       },
     },

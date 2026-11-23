@@ -2,6 +2,7 @@
   "data_export_subject": "Sua exportação de dados SACDIA está pronta",
   "email_verification_subject": "Verifique seu e-mail — SACDIA",
   "password_reset_subject": "Redefina sua senha — SACDIA",
+  "invitation_subject": "Você foi convidado para o SACDIA: crie sua senha",
   "account_deletion_subject": "Sua conta SACDIA foi excluída",
   "majority_release_subject_notice": "Em breve você será maior de idade — SACDIA",
   "majority_release_subject_released": "Sua conta SACDIA agora é só sua",

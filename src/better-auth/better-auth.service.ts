@@ -176,6 +176,21 @@ export interface IBetterAuthService {
     token: string,
     newPassword: string,
   ): Promise<{ userId: string }>;
+  /**
+   * Issues a 7-day admin invitation token for the user and queues the email.
+   * Throws ServiceUnavailableException BEFORE persisting or deleting anything
+   * when the email transport or the admin panel URL is not configured.
+   */
+  sendInvitation(userId: string): Promise<{ expiresAt: Date }>;
+  /** Consumes an invitation token: sets the password and verifies the email. */
+  acceptInvitationWithToken(
+    token: string,
+    newPassword: string,
+  ): Promise<{ userId: string }>;
+  /** Email verified, or the user signed in through a social provider. */
+  isAccountActivated(userId: string): Promise<boolean>;
+  /** When the user's current invitation token was issued, or null. */
+  getInvitationIssuedAt(userId: string): Promise<Date | null>;
   updatePasswordById(userId: string, newPassword: string): Promise<void>;
   updateOwnPassword(
     userId: string,
@@ -275,6 +290,21 @@ export function adminPanelPageBase(
 
 export function passwordResetIdentifier(email: string): string {
   return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
+}
+
+/**
+ * Namespaces admin invitation tokens. Separate from the password-reset prefix
+ * so neither flow can consume or invalidate the other, and so the
+ * email-verification endpoint rejects them (NON_EMAIL_VERIFICATION_PREFIXES).
+ */
+export const ADMIN_INVITATION_IDENTIFIER_PREFIX = 'admin-invitation:';
+
+/** An admin invitation is valid for 7 days (forgot-password stays at 1 hour). */
+export const ADMIN_INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Keyed by user id (not email) so it survives an email change. */
+export function adminInvitationIdentifier(userId: string): string {
+  return `${ADMIN_INVITATION_IDENTIFIER_PREFIX}${userId}`;
 }
 
 /** `verification.identifier` of a user's TOTP secret and backup codes. */
@@ -1044,6 +1074,181 @@ export class BetterAuthService implements IBetterAuthService {
     );
 
     return { userId: dbUser.user_id };
+  }
+
+  /**
+   * Issues the admin invitation: a 7-day token keyed by user id plus the
+   * invitation email. A new invitation replaces (invalidates) the previous one.
+   *
+   * ORDER MATTERS: every precondition that can fail (transport enabled, admin
+   * URL valid, user has an email) is checked BEFORE the first write, so a
+   * failed resend leaves the previous token usable.
+   *
+   * SECURITY: the raw token is NEVER logged. It is stored the same way as the
+   * password-reset token (plain `verification.value`, like resetPasswordForEmail).
+   */
+  async sendInvitation(userId: string): Promise<{ expiresAt: Date }> {
+    if (process.env.EMAIL_ENABLED !== 'true') {
+      throw new ServiceUnavailableException(
+        'Invitations are temporarily unavailable. Please contact support.',
+      );
+    }
+
+    const pageBase = adminPanelPageBase(process.env.ADMIN_PANEL_URL);
+    if (!pageBase) {
+      this.logger.error(
+        'Invitation not sent: ADMIN_PANEL_URL is missing or invalid',
+      );
+      throw new ServiceUnavailableException(
+        'Invitations are temporarily unavailable. Please contact support.',
+      );
+    }
+
+    const dbUser = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+    });
+    if (!dbUser || !dbUser.email || dbUser.active === false) {
+      // A deactivated account is not invitable, same answer as a missing one.
+      throw new AppNotFoundException(ErrorCode.USER_NOT_FOUND);
+    }
+
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + ADMIN_INVITATION_TTL_MS);
+    const identifier = adminInvitationIdentifier(userId);
+
+    // One transaction: the old token is never deleted without the new one
+    // being stored.
+    await this.prisma.$transaction([
+      this.prisma.verification.deleteMany({ where: { identifier } }),
+      this.prisma.verification.create({
+        data: {
+          id: randomUUID(),
+          identifier,
+          value: token,
+          expiresAt,
+        },
+      }),
+    ]);
+
+    const invitationUrl = `${pageBase}/reset-password?token=${encodeURIComponent(token)}&mode=invitation`;
+
+    this.emailService
+      .sendInvitation({ email: dbUser.email, invitationUrl })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `Failed to enqueue invitation email for ${maskEmail(dbUser.email)}: ${err.message}`,
+        );
+      });
+
+    this.logger.log(
+      `Admin invitation issued for user ${userId} (expires ${expiresAt.toISOString()})`,
+    );
+
+    return { expiresAt };
+  }
+
+  /**
+   * Consumes an admin invitation token in ONE transaction: sets the password,
+   * marks the email verified and deletes the token row. Does not issue a
+   * session; the caller revokes existing sessions.
+   */
+  async acceptInvitationWithToken(
+    token: string,
+    newPassword: string,
+  ): Promise<{ userId: string }> {
+    const verification = await this.prisma.verification.findFirst({
+      where: {
+        value: token,
+        identifier: { startsWith: ADMIN_INVITATION_IDENTIFIER_PREFIX },
+      },
+    });
+
+    if (!verification) {
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_INVALID);
+    }
+
+    if (verification.expiresAt < new Date()) {
+      await this.prisma.verification.delete({
+        where: { id: verification.id },
+      });
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_EXPIRED);
+    }
+
+    const userId = verification.identifier.slice(
+      ADMIN_INVITATION_IDENTIFIER_PREFIX.length,
+    );
+    const dbUser = userId
+      ? await this.prisma.users.findUnique({ where: { user_id: userId } })
+      : null;
+    const dbAccount = dbUser
+      ? await this.prisma.account.findFirst({
+          where: { userId: dbUser.user_id, providerId: 'credential' },
+        })
+      : null;
+
+    if (!dbUser || !dbAccount) {
+      await this.prisma.verification.deleteMany({
+        where: { identifier: verification.identifier },
+      });
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_INVALID);
+    }
+
+    // A deactivated account cannot be activated through an old invitation.
+    // Same response as any invalid token (no hint the account exists) and
+    // nothing changes: no password, no email_verified, the token stays as is.
+    if (dbUser.active === false) {
+      throw new AppBadRequestException(ErrorCode.AUTH_INVITATION_TOKEN_INVALID);
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.$transaction([
+      this.prisma.account.update({
+        where: { id: dbAccount.id },
+        data: { password: hashedPassword },
+      }),
+      this.prisma.users.update({
+        where: { user_id: dbUser.user_id },
+        data: { email_verified: true },
+      }),
+      this.prisma.verification.deleteMany({
+        where: { identifier: verification.identifier },
+      }),
+    ]);
+
+    this.logger.log(`Admin invitation accepted (user ${dbUser.user_id})`);
+
+    return { userId: dbUser.user_id };
+  }
+
+  /**
+   * An account is activated when its owner proved the mailbox (email_verified)
+   * or signed in through a social provider (a non-credential account row).
+   * No timestamp heuristics: a password set by an admin or through
+   * forgot-password does not count.
+   */
+  async isAccountActivated(userId: string): Promise<boolean> {
+    const dbUser = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { email_verified: true },
+    });
+    if (!dbUser) return false;
+    if (dbUser.email_verified) return true;
+
+    const social = await this.prisma.account.findFirst({
+      where: { userId, providerId: { not: 'credential' } },
+      select: { id: true },
+    });
+    return social !== null;
+  }
+
+  /** `created_at` of the user's current invitation token, or null. */
+  async getInvitationIssuedAt(userId: string): Promise<Date | null> {
+    const row = await this.prisma.verification.findFirst({
+      where: { identifier: adminInvitationIdentifier(userId) },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    return row?.createdAt ?? null;
   }
 
   /**

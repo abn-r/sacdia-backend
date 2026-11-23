@@ -14,6 +14,7 @@ import {
   COORDINATOR_ROLES,
   DIVISION_ROLES,
   LOCAL_FIELD_ROLES,
+  ROLES_REQUIRING_LOCAL_FIELD,
   UNION_ROLES,
 } from './role-sets';
 import { canViewPeriodicReports } from './periodic-reports-access';
@@ -24,7 +25,7 @@ export type { CapabilityKey };
 
 /**
  * What the actor can attempt, published in `GET /auth/me` as
- * `data.authorization.{capabilities,territory,assignable_global_roles}` so the
+ * `data.authorization.{capabilities,territory,assignable_global_roles,local_field_required_roles}` so the
  * admin panel and the app stop replicating role rules.
  *
  * Semantics of a capability: "the actor may ATTEMPT it on at least one
@@ -206,6 +207,16 @@ const sectionRoleAssigner: CapabilityPredicate = some(
   clubRoleIn([ClubRole.DIRECTOR]),
 );
 
+const pastorOnly: CapabilityPredicate = ({ actor }) =>
+  actor.globalRoles.size > 0 &&
+  [...actor.globalRoles].every((role) => role === GlobalRole.PASTOR);
+
+const coordinationHubView: CapabilityPredicate = globalRoleIn([
+  ...ADMIN_SCOPE_ROLES,
+  ...COORDINATOR_ROLES,
+  ...LOCAL_FIELD_ROLES,
+]);
+
 /**
  * Key → pure predicate. Keys are the capability catalog: the generator emits
  * `generated/capability-keys.ts` (and the admin/app copies) from them, and
@@ -217,9 +228,11 @@ export const CAPABILITY_DEFINITIONS: Record<
 > = {
   'admin_panel.access': ({ actor }) =>
     [...actor.globalRoles].some((role) => role !== GlobalRole.USER),
-  'admin_panel.pastor_only': ({ actor }) =>
-    actor.globalRoles.size > 0 &&
-    [...actor.globalRoles].every((role) => role === GlobalRole.PASTOR),
+  'admin_panel.pastor_only': pastorOnly,
+  // The app serves a home without a club to these accounts. It drives the
+  // club_exempt onboarding mode (see onboarding-mode.ts); extending it to
+  // more roles moves them from panel_only to club_exempt and nothing else.
+  'app.clubless_surface': some(pastorOnly, coordinationHubView),
   'audit.read_system': globalRoleIn(SUPER_ADMIN_ONLY),
   'camporee_orders.configure_offering': levelIn('all', 'local_field', 'union'),
   'camporee_orders.issue': clubRoleIn(CLUB_ADMINISTRATIVE_STAFF),
@@ -259,11 +272,7 @@ export const CAPABILITY_DEFINITIONS: Record<
   'club_sections.create_active': clubRoleIn(CLUB_DIRECTION),
   'clubs.deactivate_active': clubRoleIn([ClubRole.DIRECTOR]),
   'clubs.manage_active': clubRoleIn(CLUB_MANAGEMENT_STAFF),
-  'coordination.hub_view': globalRoleIn([
-    ...ADMIN_SCOPE_ROLES,
-    ...COORDINATOR_ROLES,
-    ...LOCAL_FIELD_ROLES,
-  ]),
+  'coordination.hub_view': coordinationHubView,
   // Writing zones and assignments is the local field's job; union and division
   // only read. Not `levelIn`: `admin` anchors in a union and would get `union`.
   'coordination.manage': globalRoleIn(ADMIN_SCOPE_AND_LOCAL_FIELD),
@@ -419,13 +428,26 @@ export function computeCapabilities(
   );
 }
 
-/** The three blocks `GET /auth/me` adds to `data.authorization`. */
+/**
+ * Roles the actor may assign that cannot be created without a Field:
+ * `assignable_global_roles` ∩ `ROLES_REQUIRING_LOCAL_FIELD`, same role-name
+ * form and order as `assignable_global_roles`.
+ */
+export function localFieldRequiredRoles(
+  assignableRoles: readonly string[],
+): string[] {
+  const requiring = new Set<string>(ROLES_REQUIRING_LOCAL_FIELD);
+  return assignableRoles.filter((role) => requiring.has(role));
+}
+
+/** The four blocks `GET /auth/me` adds to `data.authorization`. */
 export function computeActorAuthorizationSummary(
   resolved: ResolvedAuthorizationProfile,
 ): {
   capabilities: CapabilityKey[];
   territory: ActorTerritory;
   assignable_global_roles: string[];
+  local_field_required_roles: string[];
 } {
   const ctx = buildCapabilityContext(resolved);
   return {
@@ -434,5 +456,8 @@ export function computeActorAuthorizationSummary(
     ).sort(byString),
     territory: ctx.territory,
     assignable_global_roles: ctx.assignableGlobalRoles,
+    local_field_required_roles: localFieldRequiredRoles(
+      ctx.assignableGlobalRoles,
+    ),
   };
 }
