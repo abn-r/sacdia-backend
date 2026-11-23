@@ -2501,6 +2501,38 @@ describe('AdminUsersService', () => {
 
       expect(detail.invitation_pending).toBe(false);
     });
+
+    it.each([
+      // active, email, activated, expected
+      [true, 'user1@example.com', false, true],
+      [true, 'user1@example.com', true, false],
+      [true, null, false, false],
+      [true, null, true, false],
+      [false, 'user1@example.com', false, false],
+      [false, 'user1@example.com', true, false],
+      [false, null, false, false],
+      [false, null, true, false],
+    ])(
+      'active=%s email=%s activated=%s -> invitation_pending=%s',
+      async (active, email, activated, expected) => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          buildResolvedAuthorization({
+            roles: ['super-admin'],
+            permissions: ['users:read_detail'],
+          }),
+        );
+        mockPrismaService.users.findFirst.mockResolvedValue({
+          ...buildAdminDetailRecord(),
+          active,
+          email,
+        });
+        mockBetterAuthService.isAccountActivated.mockResolvedValue(activated);
+
+        const detail = await service.getUserById('actor-admin', 'user-1');
+
+        expect(detail.invitation_pending).toBe(expected);
+      },
+    );
   });
 
   describe('resendInvitation', () => {
@@ -2518,7 +2550,11 @@ describe('AdminUsersService', () => {
           Promise.resolve(
             args.where.user_id === ACTOR
               ? { users_roles: [{ roles: { role_name: 'admin' } }] }
-              : { users_roles: [{ roles: { role_name: 'pastor' } }] },
+              : {
+                  email: 'target@example.com',
+                  active: true,
+                  users_roles: [{ roles: { role_name: 'pastor' } }],
+                },
           ),
       );
       mockBetterAuthService.isAccountActivated.mockResolvedValue(false);
@@ -2551,7 +2587,11 @@ describe('AdminUsersService', () => {
           Promise.resolve(
             args.where.user_id === ACTOR
               ? { users_roles: [{ roles: { role_name: 'assistant-lf' } }] }
-              : { users_roles: [{ roles: { role_name: 'admin' } }] },
+              : {
+                  email: 'target@example.com',
+                  active: true,
+                  users_roles: [{ roles: { role_name: 'admin' } }],
+                },
           ),
       );
 
@@ -2559,6 +2599,61 @@ describe('AdminUsersService', () => {
         service.resendInvitation(ACTOR, TARGET),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
       expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
+    });
+
+    describe.each([
+      ['has no email (minor or dependent)', { email: null, active: true }],
+      ['is deactivated', { email: 'target@example.com', active: false }],
+      ['has no email and is deactivated', { email: null, active: false }],
+    ])('a target that %s', (_label, flags) => {
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockImplementation(
+          (args: { where: { user_id: string } }) =>
+            Promise.resolve(
+              args.where.user_id === ACTOR
+                ? { users_roles: [{ roles: { role_name: 'admin' } }] }
+                : {
+                    ...flags,
+                    users_roles: [{ roles: { role_name: 'pastor' } }],
+                  },
+            ),
+        );
+      });
+
+      it('answers 400 NOT_APPLICABLE before checking activation or cooldown and issues nothing', async () => {
+        const error = await service
+          .resendInvitation(ACTOR, TARGET)
+          .catch((e: { getStatus(): number; code: ErrorCode }) => e);
+
+        expect(error.getStatus()).toBe(400);
+        expect(error.code).toBe(
+          ErrorCode.ADMIN_USER_INVITATION_NOT_APPLICABLE,
+        );
+        expect(mockBetterAuthService.isAccountActivated).not.toHaveBeenCalled();
+        expect(
+          mockBetterAuthService.getInvitationIssuedAt,
+        ).not.toHaveBeenCalled();
+        expect(mockBetterAuthService.sendInvitation).not.toHaveBeenCalled();
+      });
+    });
+
+    it('still answers 403 before NOT_APPLICABLE when the actor cannot create the target role', async () => {
+      mockPrismaService.users.findUnique.mockImplementation(
+        (args: { where: { user_id: string } }) =>
+          Promise.resolve(
+            args.where.user_id === ACTOR
+              ? { users_roles: [{ roles: { role_name: 'assistant-lf' } }] }
+              : {
+                  email: null,
+                  active: false,
+                  users_roles: [{ roles: { role_name: 'admin' } }],
+                },
+          ),
+      );
+
+      await expect(
+        service.resendInvitation(ACTOR, TARGET),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
     });
 
     it('S3.6 answers 409 for an already accepted invitation, with no email and no token change', async () => {

@@ -115,6 +115,7 @@
   "ADMIN_USER_INVITATION_ALREADY_ACCEPTED": "The invitation was already accepted: the user has already activated the account",
   "ADMIN_USER_INVITATION_UNAVAILABLE": "The invitation cannot be sent right now: email delivery is unavailable",
   "ADMIN_USER_INVITATION_COOLDOWN": "An invitation was just sent. Wait a moment before resending it",
+  "ADMIN_USER_INVITATION_NOT_APPLICABLE": "This user cannot be invited: they have no email address or their account is deactivated",
   "ADMIN_SESSION_NOT_FOUND": "Session not found for the specified user",
   "ADMIN_HONOR_NOT_FOUND": "Honor not found",
   "ADMIN_HONOR_REQUIREMENT_NOT_FOUND": "Honor requirement not found",

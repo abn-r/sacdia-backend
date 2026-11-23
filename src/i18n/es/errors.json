@@ -115,6 +115,7 @@
   "ADMIN_USER_INVITATION_ALREADY_ACCEPTED": "La invitación ya fue aceptada: el usuario ya activó su cuenta",
   "ADMIN_USER_INVITATION_UNAVAILABLE": "No se puede enviar la invitación ahora: el envío de correos no está disponible",
   "ADMIN_USER_INVITATION_COOLDOWN": "Ya se envió una invitación hace poco. Espera un momento antes de reenviarla",
+  "ADMIN_USER_INVITATION_NOT_APPLICABLE": "No se puede invitar a este usuario: no tiene correo electrónico o su cuenta está desactivada",
   "ADMIN_SESSION_NOT_FOUND": "Sesión no encontrada para el usuario indicado",
   "ADMIN_HONOR_NOT_FOUND": "Honor no encontrado",
   "ADMIN_HONOR_REQUIREMENT_NOT_FOUND": "Requisito de honor no encontrado",

@@ -112,6 +112,7 @@
   "ADMIN_USER_INVITATION_ALREADY_ACCEPTED": "L'invitation a déjà été acceptée : l'utilisateur a déjà activé son compte",
   "ADMIN_USER_INVITATION_UNAVAILABLE": "L'invitation ne peut pas être envoyée pour le moment : l'envoi d'e-mails est indisponible",
   "ADMIN_USER_INVITATION_COOLDOWN": "Une invitation vient d'être envoyée. Patientez un instant avant de la renvoyer",
+  "ADMIN_USER_INVITATION_NOT_APPLICABLE": "Cet utilisateur ne peut pas être invité : il n'a pas d'adresse e-mail ou son compte est désactivé",
   "ADMIN_SESSION_NOT_FOUND": "Session introuvable pour l'utilisateur indiqué",
   "ADMIN_HONOR_NOT_FOUND": "Honneur introuvable",
   "ADMIN_HONOR_REQUIREMENT_NOT_FOUND": "Condition d'honneur introuvable",

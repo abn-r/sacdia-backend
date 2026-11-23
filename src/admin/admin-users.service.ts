@@ -780,9 +780,12 @@ export class AdminUsersService {
       guardianships,
       family_access: familyAccess,
       post_registration: sensitiveBlocks.post_registration,
-      invitation_pending: !(await this.betterAuthService.isAccountActivated(
-        user.user_id,
-      )),
+      // An invitation only makes sense for an active account with an email:
+      // minors/dependents have none and a deactivated user must not be invited.
+      invitation_pending:
+        user.active === true &&
+        !!user.email &&
+        !(await this.betterAuthService.isAccountActivated(user.user_id)),
       scope: this.toScopeMeta(scope),
     };
   }
@@ -791,7 +794,8 @@ export class AdminUsersService {
    * Resends the admin invitation (R3.9-R3.12, R3.14).
    *
    * Order: 404 (target missing or outside the actor scope) -> 403 (the actor
-   * cannot create the target's role) -> 409 (already accepted) -> 429
+   * cannot create the target's role) -> 400 (no email or deactivated; nothing
+   * to invite) -> 409 (already accepted) -> 429
    * (60 s cooldown) -> 503 (email unavailable; BetterAuthService throws before
    * touching the previous token, so it stays valid).
    */
@@ -802,6 +806,8 @@ export class AdminUsersService {
     await this.assertUserInActorScope(actorId, userId);
 
     const globalRolesSelect = {
+      email: true,
+      active: true,
       users_roles: {
         where: {
           active: true,
@@ -827,6 +833,13 @@ export class AdminUsersService {
     const targetRoles = this.extractRoleNames(targetRecord.users_roles);
     if (!targetRoles.every((role) => this.actorCanCreateRole(actorRoles, role))) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+
+    // Nothing to invite: no mailbox (minors/dependents) or a deactivated account.
+    if (!targetRecord.email || targetRecord.active !== true) {
+      throw new AppBadRequestException(
+        ErrorCode.ADMIN_USER_INVITATION_NOT_APPLICABLE,
+      );
     }
 
     if (await this.betterAuthService.isAccountActivated(userId)) {

@@ -1107,7 +1107,8 @@ export class BetterAuthService implements IBetterAuthService {
     const dbUser = await this.prisma.users.findUnique({
       where: { user_id: userId },
     });
-    if (!dbUser || !dbUser.email) {
+    if (!dbUser || !dbUser.email || dbUser.active === false) {
+      // A deactivated account is not invitable, same answer as a missing one.
       throw new AppNotFoundException(ErrorCode.USER_NOT_FOUND);
     }
 
@@ -1193,6 +1194,15 @@ export class BetterAuthService implements IBetterAuthService {
       await this.prisma.verification.deleteMany({
         where: { identifier: verification.identifier },
       });
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+      );
+    }
+
+    // A deactivated account cannot be activated through an old invitation.
+    // Same response as any invalid token (no hint the account exists) and
+    // nothing changes: no password, no email_verified, the token stays as is.
+    if (dbUser.active === false) {
       throw new AppBadRequestException(
         ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
       );

@@ -112,6 +112,7 @@
   "ADMIN_USER_INVITATION_ALREADY_ACCEPTED": "O convite já foi aceito: o usuário já ativou a conta",
   "ADMIN_USER_INVITATION_UNAVAILABLE": "Não é possível enviar o convite agora: o envio de e-mails está indisponível",
   "ADMIN_USER_INVITATION_COOLDOWN": "Um convite foi enviado há pouco. Aguarde um momento antes de reenviá-lo",
+  "ADMIN_USER_INVITATION_NOT_APPLICABLE": "Não é possível convidar este usuário: ele não tem e-mail ou a conta está desativada",
   "ADMIN_SESSION_NOT_FOUND": "Sessão não encontrada para o usuário indicado",
   "ADMIN_HONOR_NOT_FOUND": "Honra não encontrada",
   "ADMIN_HONOR_REQUIREMENT_NOT_FOUND": "Requisito de honra não encontrado",

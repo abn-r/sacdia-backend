@@ -1891,6 +1891,27 @@ describe('BetterAuthService', () => {
         expect(mockTransaction).not.toHaveBeenCalled();
       });
 
+      it('refuses a deactivated user before any write and keeps the previous token', async () => {
+        const { svc } = buildService();
+        await svc.sendInvitation(USER_ID);
+        const snapshot = JSON.stringify(store);
+        mockTransaction.mockClear();
+        mockVerificationCreate.mockClear();
+        mockVerificationDeleteMany.mockClear();
+        mockEmailService.sendInvitation.mockClear();
+        mockUsersFindUnique.mockResolvedValue({ ...mockDbUser, active: false });
+
+        await expect(svc.sendInvitation(USER_ID)).rejects.toMatchObject({
+          code: ErrorCode.USER_NOT_FOUND,
+        });
+
+        expect(mockTransaction).not.toHaveBeenCalled();
+        expect(mockVerificationCreate).not.toHaveBeenCalled();
+        expect(mockVerificationDeleteMany).not.toHaveBeenCalled();
+        expect(mockEmailService.sendInvitation).not.toHaveBeenCalled();
+        expect(JSON.stringify(store)).toBe(snapshot);
+      });
+
       it('invitation and forgot-password tokens do not invalidate each other (S3.12)', async () => {
         const { svc } = buildService();
 
@@ -1992,6 +2013,26 @@ describe('BetterAuthService', () => {
         });
         expect(mockUsersUpdate).not.toHaveBeenCalled();
         expect(store).toHaveLength(1);
+      });
+
+      it('rejects a deactivated user as an invalid token and changes nothing (no password, no email_verified, token kept)', async () => {
+        const { svc } = buildService();
+        await svc.sendInvitation(USER_ID);
+        const token = tokenOfLastEmail();
+        const snapshot = JSON.stringify(store);
+        mockTransaction.mockClear();
+        mockUsersFindUnique.mockResolvedValue({ ...mockDbUser, active: false });
+
+        await expect(
+          svc.acceptInvitationWithToken(token, 'NewPassword123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVITATION_TOKEN_INVALID,
+        });
+
+        expect(mockTransaction).not.toHaveBeenCalled();
+        expect(mockAccountUpdate).not.toHaveBeenCalled();
+        expect(mockUsersUpdate).not.toHaveBeenCalled();
+        expect(JSON.stringify(store)).toBe(snapshot);
       });
 
       it('fails closed when the user has no credential account', async () => {
