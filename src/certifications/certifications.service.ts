@@ -7,6 +7,8 @@ import {
 } from '../common/dto/pagination.dto';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
 import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
+import { ListCertificationEnrollmentsDto } from './dto/list-certification-enrollments.dto';
+import { Prisma } from '@prisma/client';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -399,6 +401,164 @@ export class CertificationsService {
         };
       }),
     );
+  }
+
+  /**
+   * Listar inscritos de una certificación (vista administrativa, paginada).
+   * Progreso = misma regla que getCertificationProgress (módulos completados /
+   * módulos totales), calculado en lote para la página (sin N+1).
+   */
+  async listCertificationEnrollments(
+    certificationId: number,
+    query: ListCertificationEnrollmentsDto,
+  ) {
+    const certification = await this.prisma.certifications.findUnique({
+      where: { certification_id: certificationId },
+      select: {
+        certification_id: true,
+        certification_modules: { select: { module_id: true } },
+      },
+    });
+    if (!certification) {
+      throw new AppNotFoundException(ErrorCode.CERT_NOT_FOUND);
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const tokens = (query.search ?? '').trim().split(/\s+/).filter(Boolean);
+
+    const where: Prisma.users_certificationsWhereInput = {
+      certification_id: certificationId,
+      active: true,
+      ...(query.status ? { status: query.status } : {}),
+      ...(tokens.length > 0
+        ? {
+            AND: tokens.map((token) => ({
+              users: {
+                OR: [
+                  { name: { contains: token, mode: 'insensitive' as const } },
+                  {
+                    paternal_last_name: {
+                      contains: token,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  {
+                    maternal_last_name: {
+                      contains: token,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                ],
+              },
+            })),
+          }
+        : {}),
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.users_certifications.count({ where }),
+      this.prisma.users_certifications.findMany({
+        where,
+        select: {
+          enrollment_id: true,
+          user_id: true,
+          status: true,
+          enrollment_date: true,
+          users: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+        orderBy: [{ enrollment_date: 'desc' }, { enrollment_id: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    const userIds = [...new Set(rows.map((r) => r.user_id))];
+    const moduleIds = certification.certification_modules.map(
+      (m) => m.module_id,
+    );
+    const modulesTotal = moduleIds.length;
+
+    const [moduleRows, assignmentRows] =
+      userIds.length > 0
+        ? await Promise.all([
+            modulesTotal > 0
+              ? this.prisma.certification_module_progress.findMany({
+                  where: {
+                    user_id: { in: userIds },
+                    module_id: { in: moduleIds },
+                    completed: true,
+                  },
+                  select: { user_id: true, module_id: true },
+                })
+              : Promise.resolve([]),
+            this.prisma.club_role_assignments.findMany({
+              where: {
+                user_id: { in: userIds },
+                active: true,
+                status: 'active',
+                club_section_id: { not: null },
+              },
+              select: {
+                user_id: true,
+                club_sections: {
+                  select: {
+                    clubs: { select: { name: true } },
+                    club_types: { select: { name: true } },
+                  },
+                },
+              },
+              orderBy: [{ start_date: 'desc' }, { assignment_id: 'desc' }],
+            }),
+          ])
+        : [[], []];
+
+    const completedByUser = new Map<string, Set<number>>();
+    for (const row of moduleRows) {
+      const set = completedByUser.get(row.user_id) ?? new Set<number>();
+      set.add(row.module_id);
+      completedByUser.set(row.user_id, set);
+    }
+
+    // Primera asignación activa más reciente por usuario.
+    const placeByUser = new Map<
+      string,
+      { club_name: string | null; section_name: string | null }
+    >();
+    for (const a of assignmentRows) {
+      if (placeByUser.has(a.user_id)) continue;
+      placeByUser.set(a.user_id, {
+        club_name: a.club_sections?.clubs?.name ?? null,
+        section_name: a.club_sections?.club_types?.name ?? null,
+      });
+    }
+
+    const items = rows.map((r) => {
+      const completed = completedByUser.get(r.user_id)?.size ?? 0;
+      const percent =
+        modulesTotal > 0 ? Math.round((completed / modulesTotal) * 100) : 0;
+      const place = placeByUser.get(r.user_id);
+      return {
+        enrollment_id: r.enrollment_id,
+        user_id: r.user_id,
+        name: r.users.name,
+        paternal_last_name: r.users.paternal_last_name ?? null,
+        maternal_last_name: r.users.maternal_last_name ?? null,
+        club_name: place?.club_name ?? null,
+        section_name: place?.section_name ?? null,
+        status: r.status,
+        progress_percent: Math.min(100, Math.max(0, percent)),
+        enrollment_date: r.enrollment_date.toISOString(),
+      };
+    });
+
+    return { items, total, page, limit };
   }
 
   /**

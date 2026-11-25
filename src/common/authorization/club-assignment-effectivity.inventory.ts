@@ -48,6 +48,8 @@ const baseline = {
     'effectiveWhere|T08|3|93f3d967bce4',
   'classes/class-requirement-eligibility.service.ts':
     'effectiveWhere|T08|2|a3be28c9e1b2',
+  'certifications/certifications.service.ts':
+    'effectiveWhere|T09|1|31f8e0c40510',
   'certifications/eligibility/eligibility-rule-handlers.ts':
     'effectiveWhere|T08|2|9841f0b29dc2',
   'clubs/club-role-candidates.queries.ts':
@@ -124,7 +126,7 @@ const baseline = {
   'qr/qr.service.ts': 'effectiveWhere|T08|3|fb413b5f37eb',
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
     'effectiveWhere|T08|1|11a310c43604',
-  'rbac/rbac.service.ts': 'effectiveWhere|T08|1|68c2f63166fd',
+  'rbac/rbac.service.ts': 'effectiveWhere|T08|2|555e1c82d735',
   'requests/requests.service.ts': 'effectiveWhere|T08|9|dfcece1b51a2',
   'scoring-categories/scoring-categories.service.ts':
     'effectiveWhere|T09|2|13fb6223b7d5',

@@ -314,6 +314,61 @@ export class RbacService {
     return updated;
   }
 
+  /**
+   * Fuente única del conteo que bloquea la desactivación de un rol y que
+   * muestra el admin en el diálogo (getRoleUsage).
+   *
+   * Cuenta personas distintas: asignaciones globales activas (users_roles) y
+   * asignaciones de club vigentes o por venir (club_role_assignments activas,
+   * con estado active o pending, sin terminar ni expirar). Una persona con el
+   * rol en dos secciones cuenta una vez. Las asignaciones con fecha de inicio
+   * futura y las solicitudes pendientes cuentan: desactivar el rol las dejaría
+   * sin efecto.
+   */
+  private async countActiveRoleAssignments(roleId: string): Promise<number> {
+    const now = new Date();
+    const today = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+    const [globalHolders, clubHolders] = await Promise.all([
+      this.prisma.users_roles.findMany({
+        where: { role_id: roleId, active: true },
+        select: { user_id: true },
+        distinct: ['user_id'],
+      }),
+      this.prisma.club_role_assignments.findMany({
+        where: {
+          role_id: roleId,
+          active: true,
+          status: { in: ['active', 'pending'] },
+          AND: [
+            { OR: [{ end_date: null }, { end_date: { gte: today } }] },
+            { OR: [{ expires_at: null }, { expires_at: { gt: now } }] },
+          ],
+        },
+        select: { user_id: true },
+        distinct: ['user_id'],
+      }),
+    ]);
+    return new Set(
+      [...globalHolders, ...clubHolders].map(({ user_id }) => user_id),
+    ).size;
+  }
+
+  async getRoleUsage(roleId: string) {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_id: true },
+    });
+
+    if (!role) {
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        id: roleId,
+      });
+    }
+
+    const usersCount = await this.countActiveRoleAssignments(roleId);
+    return { role_id: roleId, users_count: usersCount };
+  }
+
   async deactivateRole(roleId: string) {
     const role = await this.prisma.roles.findUnique({
       where: { role_id: roleId },
@@ -330,9 +385,7 @@ export class RbacService {
     }
 
     // Count active user assignments for this role
-    const assignedCount = await this.prisma.users_roles.count({
-      where: { role_id: roleId, active: true },
-    });
+    const assignedCount = await this.countActiveRoleAssignments(roleId);
 
     if (assignedCount > 0) {
       throw new AppConflictException(ErrorCode.RBAC_ROLE_HAS_ASSIGNMENTS, {

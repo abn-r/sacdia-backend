@@ -21,6 +21,7 @@ export const KNOWN_ACCESS_DECISION_FILES: readonly string[] = [
   'annual-folders/annual-folders.service.ts',
   'annual-folders/score-calculators/sacdia-operational-usage-score.ts',
   'camporee-scoring/camporee-scoring.service.ts',
+  'certifications/certifications.service.ts',
   'certifications/eligibility/eligibility-rule-handlers.ts',
   'classes/class-counselor-assignments.service.ts',
   'classes/class-progress-access.service.ts',

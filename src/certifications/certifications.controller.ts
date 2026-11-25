@@ -22,6 +22,7 @@ import {
 import { CertificationsService } from './certifications.service';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
 import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
+import { ListCertificationEnrollmentsDto } from './dto/list-certification-enrollments.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import {
   AuthorizationResource,
@@ -111,6 +112,31 @@ export class CertificationsController {
 @Controller('certifications')
 export class UserCertificationsController {
   constructor(private readonly certificationsService: CertificationsService) {}
+
+  @Get('certifications/:id/enrollments')
+  @RequirePermissions('certifications:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Listar inscritos de una certificación (admin)',
+    description:
+      'Lista paginada de inscripciones activas con progreso (%), club y sección vigentes. Orden: fecha de inscripción desc.',
+  })
+  @ApiParam({ name: 'id', description: 'ID de la certificación', example: 1 })
+  @ApiResponse({
+    status: 200,
+    description: '{ items, total, page, limit }',
+  })
+  @ApiResponse({ status: 404, description: 'Certificación no encontrada' })
+  async listEnrollments(
+    @Param('id', ParseIntPipe) id: number,
+    @Query() query: ListCertificationEnrollmentsDto,
+  ) {
+    const data = await this.certificationsService.listCertificationEnrollments(
+      id,
+      query,
+    );
+    return { status: 'success', data };
+  }
 
   @Post('users/:userId/certifications/enroll')
   @RequirePermissions('user_certifications:manage')

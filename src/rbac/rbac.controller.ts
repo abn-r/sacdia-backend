@@ -148,6 +148,20 @@ export class RbacController {
     return { status: 'success', data };
   }
 
+  @Get('roles/:id/usage')
+  @RequirePermissions('roles:read')
+  @ApiOperation({
+    summary: 'Uso de un rol: usuarios con asignación activa',
+    description:
+      'users_count es el mismo conteo que bloquea la desactivación del rol.',
+  })
+  @ApiResponse({ status: 200, description: '{ role_id, users_count }' })
+  @ApiResponse({ status: 404, description: 'Rol no encontrado' })
+  async getRoleUsage(@Param('id', ParseUuidParamPipe) id: string) {
+    const data = await this.rbacService.getRoleUsage(id);
+    return { status: 'success', data };
+  }
+
   // ─── Role CRUD (super-admin only) ───────────────────────────
 
   @Post('roles')
