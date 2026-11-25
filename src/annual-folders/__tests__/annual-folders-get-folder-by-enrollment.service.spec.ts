@@ -1,8 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualFoldersService } from '../annual-folders.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { GlobalRole } from '../../common/authorization/roles';
+import {
+  buildResolvedProfile,
+  buildScopedAuthorizationContext,
+} from './folder-scope.testing';
 
 describe('AnnualFoldersService — getFolderByEnrollment', () => {
   let service: AnnualFoldersService;
@@ -26,14 +32,26 @@ describe('AnnualFoldersService — getFolderByEnrollment', () => {
     getSignedDownloadUrl: jest.fn(),
   };
 
+  let mockAuthorizationContext: ReturnType<
+    typeof buildScopedAuthorizationContext
+  >;
+
   beforeEach(async () => {
     jest.resetAllMocks();
+
+    mockAuthorizationContext = buildScopedAuthorizationContext(
+      buildResolvedProfile(GlobalRole.DIRECTOR_LF, { localField: 30 }),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AnnualFoldersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContext,
+        },
       ],
     }).compile();
 
@@ -96,10 +114,6 @@ describe('AnnualFoldersService — getFolderByEnrollment', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ user_role_id: 'global-read-grant' });
     mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
-    mockPrismaService.users.findUnique.mockResolvedValue({
-      local_field_id: 30,
-      union_id: null,
-    });
 
     await expect(
       service.assertFolderReadAccessForUser('folder-1', 'lf-reviewer'),

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualFoldersService } from '../annual-folders.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppNotFoundException } from '../../common/errors/app.exception';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
@@ -184,6 +185,7 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
         AnnualFoldersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        { provide: AuthorizationContextService, useValue: {} },
       ],
     }).compile();
 
@@ -645,6 +647,7 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
           provide: FILE_STORAGE_SERVICE,
           useValue: mockFileStorageCamp,
         },
+        { provide: AuthorizationContextService, useValue: {} },
       ],
     }).compile();
 

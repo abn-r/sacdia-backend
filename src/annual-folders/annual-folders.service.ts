@@ -38,6 +38,12 @@ import {
 } from '../common/utils/evidence-file-names';
 import { normalizeRankingComponentKey } from '../rankings/annual-ranking-progress/ranking-component-catalog';
 import { GlobalRole } from '../common/authorization/roles';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import {
+  clubsWhereForActor,
+  hasTerritorialRecorte,
+  resolveActorTerritoryScope,
+} from '../common/authorization/actor-territory-scope';
 
 // Cap concurrent presign calls for EVIDENCE_FILES bucket. A folder can contain
 // many sections × many files each — without the cap, a single getFolder request
@@ -79,6 +85,8 @@ type FolderAccessContext = {
   clubSectionId: number;
   localFieldId: number | null;
   unionId: number | null;
+  /** Derived through the hierarchy (local field -> union -> division). */
+  divisionId: number | null;
 };
 
 type AnnualFolderDbClient = Prisma.TransactionClient | PrismaService;
@@ -98,6 +106,7 @@ export class AnnualFoldersService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly authorizationContext: AuthorizationContextService,
     @Optional()
     private readonly hierarchy?: InstitutionalHierarchyService,
   ) {}
@@ -1306,7 +1315,12 @@ export class AnnualFoldersService {
                   select: {
                     club_id: true,
                     local_field_id: true,
-                    local_fields: { select: { union_id: true } },
+                    local_fields: {
+                      select: {
+                        union_id: true,
+                        unions: { select: { division_id: true } },
+                      },
+                    },
                   },
                 },
               },
@@ -1347,11 +1361,17 @@ export class AnnualFoldersService {
         club_section_id: true,
         club_section: {
           select: {
+      divisionId: club.local_fields?.unions?.division_id ?? null,
             clubs: {
               select: {
                 club_id: true,
                 local_field_id: true,
-                local_fields: { select: { union_id: true } },
+                local_fields: {
+                  select: {
+                    union_id: true,
+                    unions: { select: { division_id: true } },
+                  },
+                },
               },
             },
           },
@@ -1390,6 +1410,7 @@ export class AnnualFoldersService {
         annual_folder: {
           select: {
             club_enrollment: {
+      divisionId: club.local_fields?.unions?.division_id ?? null,
               select: {
                 club_section_id: true,
                 club_section: {
@@ -1398,7 +1419,12 @@ export class AnnualFoldersService {
                       select: {
                         club_id: true,
                         local_field_id: true,
-                        local_fields: { select: { union_id: true } },
+                        local_fields: {
+                          select: {
+                            union_id: true,
+                            unions: { select: { division_id: true } },
+                          },
+                        },
                       },
                     },
                   },
@@ -1435,6 +1461,7 @@ export class AnnualFoldersService {
           active: true,
           role_category: 'GLOBAL',
           role_name: GlobalRole.SUPER_ADMIN,
+      divisionId: club.local_fields?.unions?.division_id ?? null,
         },
       },
       select: { user_role_id: true },
@@ -1510,24 +1537,20 @@ export class AnnualFoldersService {
     userId: string,
     context: FolderAccessContext,
   ): Promise<boolean> {
-    const reviewer = await this.prisma.users.findUnique({
-      where: { user_id: userId },
-      select: { local_field_id: true, union_id: true },
-    });
+    // Resolve through the institutional hierarchy (role-first tier), never the
+    // raw users.union_id / local_field_id columns: `users` has no division_id
+    // and a Division actor's own union can differ from the folder's union.
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
 
-    if (!reviewer) return false;
-
-    if (
-      reviewer.local_field_id != null &&
-      reviewer.local_field_id === context.localFieldId
-    ) {
-      return true;
-    }
-
-    return (
-      reviewer.union_id != null &&
-      context.unionId != null &&
-      reviewer.union_id === context.unionId
+    return this.authorizationContext.canAccessHierarchyScope(
+      resolved,
+      {
+        local_field_id: context.localFieldId,
+        union_id: context.unionId,
+        division_id: context.divisionId,
+      },
+      'current-write',
     );
   }
 
@@ -2989,10 +3012,13 @@ export class AnnualFoldersService {
       return {};
     }
 
-    const reviewer = await this.prisma.users.findUnique({
-      where: { user_id: userId },
-      select: { local_field_id: true, union_id: true },
-    });
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    // Throws 403 ADMIN_USER_SCOPE_MISSING for a territorial role without anchor.
+    const tier = resolveActorTerritoryScope(resolved);
+    if (tier.level === 'unconfigured') {
+      clubsWhereForActor(tier);
+    }
 
     const scopedWhere: Prisma.annual_foldersWhereInput[] = [
       {
@@ -3016,27 +3042,13 @@ export class AnnualFoldersService {
       },
     ];
 
-    if (reviewer?.local_field_id != null) {
+    // Territorial cut (local field, union or division) resolved through the
+    // club hierarchy, not through the actor's raw users columns.
+    if (hasTerritorialRecorte(tier)) {
       scopedWhere.push({
         club_enrollment: {
           club_section: {
-            clubs: {
-              local_field_id: reviewer.local_field_id,
-            },
-          },
-        },
-      });
-    }
-
-    if (reviewer?.union_id != null) {
-      scopedWhere.push({
-        club_enrollment: {
-          club_section: {
-            clubs: {
-              local_fields: {
-                union_id: reviewer.union_id,
-              },
-            },
+            clubs: clubsWhereForActor(tier),
           },
         },
       });

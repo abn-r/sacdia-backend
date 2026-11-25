@@ -66,7 +66,11 @@ describe('AnnualFoldersService — submitFolder', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new AnnualFoldersService(mockPrismaService as any, {} as any);
+    service = new AnnualFoldersService(
+      mockPrismaService as any,
+      {} as any,
+      {} as any,
+    );
 
     mockPrismaService.$transaction.mockImplementation(
       (cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx),

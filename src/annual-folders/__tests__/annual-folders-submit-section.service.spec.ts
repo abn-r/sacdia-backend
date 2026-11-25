@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualFoldersService } from '../annual-folders.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { annual_folder_section_status_enum } from '@prisma/client';
@@ -105,6 +106,7 @@ describe('AnnualFoldersService — submitSection', () => {
         AnnualFoldersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        { provide: AuthorizationContextService, useValue: {} },
       ],
     }).compile();
 

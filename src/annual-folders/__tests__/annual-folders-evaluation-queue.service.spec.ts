@@ -1,8 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { annual_folder_section_status_enum } from '@prisma/client';
 import { AnnualFoldersService } from '../annual-folders.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
+import { GlobalRole } from '../../common/authorization/roles';
+import { ErrorCode } from '../../common/errors/error-codes';
+import { buildResolvedProfile } from './folder-scope.testing';
 
 describe('AnnualFoldersService — getEvaluationQueue', () => {
   let service: AnnualFoldersService;
@@ -22,6 +26,17 @@ describe('AnnualFoldersService — getEvaluationQueue', () => {
 
   const mockFileStorageService = {
     getSignedDownloadUrl: jest.fn(),
+  };
+
+  const mockAuthorizationContext = {
+    resolveUserAuthorization: jest.fn(),
+    canAccessHierarchyScope: jest.fn(),
+  };
+
+  const actAs = (roleName: string | null, ids = {}) => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      buildResolvedProfile(roleName, ids),
+    );
   };
 
   const submittedAt = new Date('2026-06-15T14:30:00Z');
@@ -102,6 +117,10 @@ describe('AnnualFoldersService — getEvaluationQueue', () => {
         AnnualFoldersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContext,
+        },
       ],
     }).compile();
 
@@ -142,39 +161,27 @@ describe('AnnualFoldersService — getEvaluationQueue', () => {
     });
   });
 
+  const queueWhere = () =>
+    mockPrismaService.annual_folders.findMany.mock.calls[0][0].where;
+
+  const territorialBranch = (clubsWhere: object) => ({
+    club_enrollment: { club_section: { clubs: clubsWhere } },
+  });
+
   it('keeps access scope, status filter, and search filter composed under AND', async () => {
     mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
-    mockPrismaService.users.findUnique.mockResolvedValue({
-      local_field_id: 5,
-      union_id: 2,
-    });
+    actAs(GlobalRole.DIRECTOR_UNION, { union: 2, division: 1 });
 
     await service.getEvaluationQueue('reviewer-1', {
       search: 'Betel',
       status: 'needs_review',
     });
 
-    const where =
-      mockPrismaService.annual_folders.findMany.mock.calls[0][0].where;
+    const where = queueWhere();
     expect(where.AND).toHaveLength(3);
     expect(where.AND[0].OR).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          club_enrollment: expect.objectContaining({
-            club_section: expect.objectContaining({
-              clubs: expect.objectContaining({ local_field_id: 5 }),
-            }),
-          }),
-        }),
-        expect.objectContaining({
-          club_enrollment: expect.objectContaining({
-            club_section: expect.objectContaining({
-              clubs: expect.objectContaining({
-                local_fields: expect.objectContaining({ union_id: 2 }),
-              }),
-            }),
-          }),
-        }),
+        territorialBranch({ local_fields: { union_id: 2 } }),
       ]),
     );
     expect(where.AND[1]).toEqual({
@@ -190,6 +197,75 @@ describe('AnnualFoldersService — getEvaluationQueue', () => {
       },
     });
     expect(where.AND[2].OR).toEqual(expect.any(Array));
+  });
+
+  describe('territorial scope through the hierarchy', () => {
+    beforeEach(() => {
+      mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
+    });
+
+    it('Division actor sees every union of its division, not its own users.union_id', async () => {
+      actAs(GlobalRole.DIRECTOR_DIA, { division: 7, union: 99 });
+
+      await service.getEvaluationQueue('reviewer-1', {});
+
+      const branches = queueWhere().AND[0].OR;
+      expect(branches).toHaveLength(2);
+      expect(branches).toContainEqual(
+        territorialBranch({ local_fields: { unions: { division_id: 7 } } }),
+      );
+      expect(JSON.stringify(branches)).not.toContain('"union_id":99');
+      expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('Division actor anchored only by local_field_id is still cut by its division', async () => {
+      actAs(GlobalRole.ASSISTANT_DIA, { division: 7, localField: 5 });
+
+      await service.getEvaluationQueue('reviewer-1', {});
+
+      const branches = queueWhere().AND[0].OR;
+      expect(branches).toContainEqual(
+        territorialBranch({ local_fields: { unions: { division_id: 7 } } }),
+      );
+      expect(JSON.stringify(branches)).not.toContain('"local_field_id":5');
+    });
+
+    it('Union actor keeps the union cut', async () => {
+      actAs(GlobalRole.ASSISTANT_UNION, { union: 2 });
+
+      await service.getEvaluationQueue('reviewer-1', {});
+
+      expect(queueWhere().AND[0].OR).toContainEqual(
+        territorialBranch({ local_fields: { union_id: 2 } }),
+      );
+    });
+
+    it('Local field actor keeps the local field cut', async () => {
+      actAs(GlobalRole.DIRECTOR_LF, { localField: 5, union: 2 });
+
+      await service.getEvaluationQueue('reviewer-1', {});
+
+      const branches = queueWhere().AND[0].OR;
+      expect(branches).toContainEqual(territorialBranch({ local_field_id: 5 }));
+      expect(JSON.stringify(branches)).not.toContain('union_id');
+    });
+
+    it('actor without a territorial role only gets the club-assignment branch', async () => {
+      actAs(null);
+
+      await service.getEvaluationQueue('reviewer-1', {});
+
+      expect(queueWhere().AND[0].OR).toHaveLength(1);
+    });
+
+    it('Division role without a division anchor answers 403 ADMIN_USER_SCOPE_MISSING', async () => {
+      actAs(GlobalRole.DIRECTOR_DIA, { localField: 5 });
+
+      await expect(
+        service.getEvaluationQueue('reviewer-1', {}),
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+      expect(mockPrismaService.annual_folders.findMany).not.toHaveBeenCalled();
+    });
   });
 
   it('escapes LIKE wildcards in every search predicate', async () => {
