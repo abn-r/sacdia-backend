@@ -796,10 +796,20 @@ describe('RbacService', () => {
   // deactivateRole
   // ============================================================
 
+  // Role holders: global (users_roles) and club (club_role_assignments) rows.
+  function mockRoleHolders(globalIds: string[], clubIds: string[] = []) {
+    mockPrismaService.users_roles.findMany.mockResolvedValue(
+      globalIds.map((user_id) => ({ user_id })),
+    );
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue(
+      clubIds.map((user_id) => ({ user_id })),
+    );
+  }
+
   describe('deactivateRole', () => {
     it('TC-DR1 - happy path: soft-deletes role when no users assigned', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.users_roles.count.mockResolvedValue(0);
+      mockRoleHolders([]);
       mockPrismaService.roles.update.mockResolvedValue({
         ...baseRole,
         active: false,
@@ -822,12 +832,12 @@ describe('RbacService', () => {
       await expect(
         service.deactivateRole(superAdminRole.role_id),
       ).rejects.toMatchObject({ code: ErrorCode.RBAC_ROLE_PROTECTED });
-      expect(mockPrismaService.users_roles.count).not.toHaveBeenCalled();
+      expect(mockPrismaService.users_roles.findMany).not.toHaveBeenCalled();
     });
 
     it('TC-DR3 - error: throws AppConflictException when users are still assigned', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.users_roles.count.mockResolvedValue(3);
+      mockRoleHolders(['u1', 'u2', 'u3']);
 
       await expect(service.deactivateRole(ROLE_ID)).rejects.toMatchObject({
         code: ErrorCode.RBAC_ROLE_HAS_ASSIGNMENTS,
@@ -845,32 +855,68 @@ describe('RbacService', () => {
 
     it('TC-DR5 - throws AppConflictException when exactly 1 user assigned', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.users_roles.count.mockResolvedValue(1);
+      mockRoleHolders(['u1']);
 
       await expect(service.deactivateRole(ROLE_ID)).rejects.toMatchObject({
         code: ErrorCode.RBAC_ROLE_HAS_ASSIGNMENTS,
       });
     });
+
+    it('TC-DR6 - blocks when the role is only held through a club assignment', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockRoleHolders([], ['u9']);
+
+      await expect(service.deactivateRole(ROLE_ID)).rejects.toMatchObject({
+        code: ErrorCode.RBAC_ROLE_HAS_ASSIGNMENTS,
+      });
+      expect(mockPrismaService.roles.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('getRoleUsage', () => {
-    it('returns the active users_roles count with the same where as deactivateRole', async () => {
+    it('counts distinct people across global and club assignments, same as deactivateRole', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.users_roles.count.mockResolvedValue(4);
+      // u2 holds the role globally and in a club section: counted once.
+      mockRoleHolders(['u1', 'u2'], ['u2', 'u3', 'u4']);
 
       const usage = await service.getRoleUsage(ROLE_ID);
 
       expect(usage).toEqual({ role_id: ROLE_ID, users_count: 4 });
-      expect(mockPrismaService.users_roles.count).toHaveBeenCalledWith({
+      expect(mockPrismaService.users_roles.findMany).toHaveBeenCalledWith({
         where: { role_id: ROLE_ID, active: true },
+        select: { user_id: true },
+        distinct: ['user_id'],
+      });
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith({
+        where: {
+          role_id: ROLE_ID,
+          active: true,
+          status: { in: ['active', 'pending'] },
+          AND: [
+            {
+              OR: [{ end_date: null }, { end_date: { gte: expect.any(Date) } }],
+            },
+            {
+              OR: [
+                { expires_at: null },
+                { expires_at: { gt: expect.any(Date) } },
+              ],
+            },
+          ],
+        },
+        select: { user_id: true },
+        distinct: ['user_id'],
       });
 
       // deactivateRole blocks with exactly the number reported by getRoleUsage
-      await expect(service.deactivateRole(ROLE_ID)).rejects.toMatchObject({
+      const error = await service.deactivateRole(ROLE_ID).catch((e) => e);
+      expect(error).toMatchObject({
         code: ErrorCode.RBAC_ROLE_HAS_ASSIGNMENTS,
       });
-      expect(mockPrismaService.users_roles.count).toHaveBeenLastCalledWith({
-        where: { role_id: ROLE_ID, active: true },
+      expect(error.getResponse()).toMatchObject({
+        namedArgs: { id: ROLE_ID, count: 4 },
       });
     });
 
@@ -880,7 +926,10 @@ describe('RbacService', () => {
       await expect(service.getRoleUsage(ROLE_ID)).rejects.toMatchObject({
         code: ErrorCode.RBAC_ROLE_NOT_FOUND,
       });
-      expect(mockPrismaService.users_roles.count).not.toHaveBeenCalled();
+      expect(mockPrismaService.users_roles.findMany).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).not.toHaveBeenCalled();
     });
   });
 
