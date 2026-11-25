@@ -71,6 +71,43 @@ function summarizeRequiredSections(
   return summary;
 }
 
+type VersionModule = {
+  module_id: number;
+  certification_sections: { section_id: number; required: boolean | null }[];
+};
+
+/**
+ * Progreso de una inscripción con versión: secciones requeridas aprobadas /
+ * secciones requeridas de su versión. Un módulo está completo cuando todas sus
+ * secciones requeridas están aprobadas. El booleano legado de
+ * certification_module_progress ya no se escribe, así que no se usa.
+ */
+function versionProgress(
+  modules: VersionModule[],
+  statusBySection: Map<number, string> | undefined,
+) {
+  let required = 0;
+  let approved = 0;
+  let modulesCompleted = 0;
+  for (const module of modules) {
+    const requiredSections = module.certification_sections.filter(
+      (s) => s.required ?? true,
+    );
+    const approvedSections = requiredSections.filter(
+      (s) => statusBySection?.get(s.section_id) === 'APPROVED',
+    ).length;
+    required += requiredSections.length;
+    approved += approvedSections;
+    if (approvedSections === requiredSections.length) modulesCompleted += 1;
+  }
+  return {
+    progress_percentage:
+      required > 0 ? Math.round((approved / required) * 1000) / 10 : 0,
+    modules_completed: modulesCompleted,
+    modules_total: modules.length,
+  };
+}
+
 @Injectable()
 export class CertificationsService {
   constructor(
@@ -323,35 +360,45 @@ export class CertificationsService {
         active: true,
       },
       include: {
-        certifications: {
-          select: {
-            name: true,
-            certification_modules: {
-              select: {
-                module_id: true,
-                certification_sections: {
-                  select: { section_id: true, required: true },
-                },
-              },
-            },
-          },
-        },
+        certifications: { select: { name: true } },
       },
       orderBy: { enrollment_date: 'desc' },
     });
+    if (enrollments.length === 0) return [];
 
-    // Una sola consulta para el estado de secciones de todas las inscripciones.
-    const progressRows =
-      enrollments.length > 0
-        ? ((await this.prisma.certification_section_progress.findMany({
-            where: {
-              enrollment_id: { in: enrollments.map((e) => e.enrollment_id) },
-            },
-            select: { enrollment_id: true, section_id: true, status: true },
-          })) ?? [])
-        : [];
+    // Árbol de cada versión y estado de secciones de todas las inscripciones,
+    // en dos consultas (sin N+1).
+    const versionIds = [
+      ...new Set(enrollments.map((e) => e.certification_version_id)),
+    ];
+    const [versionModules, progressRows] = await Promise.all([
+      this.prisma.certification_modules.findMany({
+        where: { certification_version_id: { in: versionIds }, active: true },
+        select: {
+          module_id: true,
+          certification_version_id: true,
+          certification_sections: {
+            where: { active: true },
+            select: { section_id: true, required: true },
+          },
+        },
+      }),
+      this.prisma.certification_section_progress.findMany({
+        where: {
+          enrollment_id: { in: enrollments.map((e) => e.enrollment_id) },
+        },
+        select: { enrollment_id: true, section_id: true, status: true },
+      }),
+    ]);
+
+    const modulesByVersion = new Map<number, VersionModule[]>();
+    for (const module of versionModules) {
+      const list = modulesByVersion.get(module.certification_version_id) ?? [];
+      list.push(module);
+      modulesByVersion.set(module.certification_version_id, list);
+    }
     const statusByEnrollment = new Map<number, Map<number, string>>();
-    for (const row of progressRows) {
+    for (const row of progressRows ?? []) {
       if (row.enrollment_id === null) continue;
       const bySection =
         statusByEnrollment.get(row.enrollment_id) ?? new Map<number, string>();
@@ -359,52 +406,33 @@ export class CertificationsService {
       statusByEnrollment.set(row.enrollment_id, bySection);
     }
 
-    // Calcular progreso para cada enrollment
-    return Promise.all(
-      enrollments.map(async (enrollment) => {
-        const modulesTotal =
-          enrollment.certifications.certification_modules.length;
-
-        // Contar módulos completados
-        const completedModules =
-          await this.prisma.certification_module_progress.count({
-            where: {
-              user_id: userId,
-              module_id: {
-                in: enrollment.certifications.certification_modules.map(
-                  (m) => m.module_id,
-                ),
-              },
-              completed: true,
-            },
-          });
-
-        const progressPercentage =
-          modulesTotal > 0 ? (completedModules / modulesTotal) * 100 : 0;
-
-        return {
-          enrollment_id: enrollment.enrollment_id,
-          certification_id: enrollment.certification_id,
-          certification: {
-            name: enrollment.certifications.name,
-          },
-          enrollment_date: enrollment.enrollment_date,
-          completion_status: enrollment.completion_status,
-          status: enrollment.status,
-          certified_at: enrollment.certified_at ?? null,
-          summary: summarizeRequiredSections(
-            enrollment.certifications.certification_modules.flatMap(
-              (m) => m.certification_sections ?? [],
-            ),
-            statusByEnrollment.get(enrollment.enrollment_id),
+    return enrollments.map((enrollment) => {
+      const modules =
+        modulesByVersion.get(enrollment.certification_version_id) ?? [];
+      const statusBySection = statusByEnrollment.get(enrollment.enrollment_id);
+      return {
+        enrollment_id: enrollment.enrollment_id,
+        certification_id: enrollment.certification_id,
+        certification: {
+          name: enrollment.certifications.name,
+        },
+        enrollment_date: enrollment.enrollment_date,
+        completion_status: enrollment.completion_status,
+        status: enrollment.status,
+        certified_at: enrollment.certified_at ?? null,
+        summary: summarizeRequiredSections(
+          modules.flatMap((m) =>
+            m.certification_sections.map((s) => ({
+              section_id: s.section_id,
+              required: s.required ?? true,
+            })),
           ),
-          progress_percentage: Math.round(progressPercentage * 10) / 10,
-          modules_completed: completedModules,
-          modules_total: modulesTotal,
-          active: enrollment.active,
-        };
-      }),
-    );
+          statusBySection,
+        ),
+        ...versionProgress(modules, statusBySection),
+        active: enrollment.active,
+      };
+    });
   }
 
   /**
@@ -606,19 +634,7 @@ export class CertificationsService {
         active: true,
       },
       include: {
-        certifications: {
-          select: {
-            name: true,
-            certification_modules: {
-              include: {
-                certification_sections: {
-                  orderBy: { section_id: 'asc' },
-                },
-              },
-              orderBy: { module_id: 'asc' },
-            },
-          },
-        },
+        certifications: { select: { name: true } },
       },
     });
 
@@ -626,97 +642,95 @@ export class CertificationsService {
       throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
     }
 
-    // Obtener progreso de módulos
-    const moduleProgress =
-      await this.prisma.certification_module_progress.findMany({
+    // Árbol de la versión a la que está ligada la inscripción (no el de todas
+    // las versiones de la certificación) y el estado de sus secciones. El
+    // estado real vive en certification_section_progress.status (DRAFT/
+    // SUBMITTED/CHANGES_REQUESTED/APPROVED), gestionado por el flujo de
+    // requisitos.
+    const [versionModules, sectionProgress] = await Promise.all([
+      this.prisma.certification_modules.findMany({
         where: {
-          user_id: userId,
-          module_id: {
-            in: enrollment.certifications.certification_modules.map(
-              (m) => m.module_id,
-            ),
+          certification_version_id: enrollment.certification_version_id,
+          active: true,
+        },
+        include: {
+          certification_sections: {
+            where: { active: true },
+            orderBy: { section_id: 'asc' },
           },
         },
-      });
-
-    // Obtener progreso de secciones
-    const sectionIds = enrollment.certifications.certification_modules.flatMap(
-      (m) => m.certification_sections.map((s) => s.section_id),
+        orderBy: { module_id: 'asc' },
+      }),
+      this.prisma.certification_section_progress.findMany({
+        where: { enrollment_id: enrollment.enrollment_id },
+      }),
+    ]);
+    const progressBySection = new Map(
+      sectionProgress.map((sp) => [sp.section_id, sp]),
     );
-
-    const sectionProgress =
-      await this.prisma.certification_section_progress.findMany({
-        where: {
-          user_id: userId,
-          section_id: { in: sectionIds },
-        },
-      });
-
-    // Las inscripciones con versión (motor configurable) ya no marcan
-    // secciones con el booleano legado `completed`; el estado real vive en
-    // `certification_section_progress.status` (DRAFT/SUBMITTED/
-    // CHANGES_REQUESTED/APPROVED), gestionado por el flujo de requisitos.
-    const isVersionedEnrollment = Boolean(enrollment.certification_version_id);
+    const statusBySection = new Map(
+      sectionProgress.map((sp) => [sp.section_id, sp.status as string]),
+    );
 
     // Construir respuesta detallada
-    const modules = enrollment.certifications.certification_modules.map(
-      (module) => {
-        const moduleProgressData = moduleProgress.find(
-          (mp) => mp.module_id === module.module_id,
-        );
-
-        const sections = module.certification_sections.map((section) => {
-          const sectionProgressData = sectionProgress.find(
-            (sp) => sp.section_id === section.section_id,
-          );
-
-          return {
-            section_id: section.section_id,
-            name: section.name,
-            completed: isVersionedEnrollment
-              ? sectionProgressData?.status === 'APPROVED'
-              : (sectionProgressData?.completed ?? false),
-            completion_date: sectionProgressData?.completion_date ?? null,
-            status: sectionProgressData?.status ?? 'NOT_STARTED',
-            submitted_at: sectionProgressData?.submitted_at ?? null,
-            reviewed_at: sectionProgressData?.reviewed_at ?? null,
-            last_review_comment:
-              sectionProgressData?.last_review_comment ?? null,
-            required: section.required ?? true,
-          };
-        });
+    const modules = versionModules.map((module) => {
+      const sections = module.certification_sections.map((section) => {
+        const sectionProgressData = progressBySection.get(section.section_id);
 
         return {
-          module_id: module.module_id,
-          name: module.name,
-          completed: moduleProgressData?.completed ?? false,
-          completion_date: moduleProgressData?.completion_date ?? null,
-          sections,
+          section_id: section.section_id,
+          name: section.name,
+          completed: sectionProgressData?.status === 'APPROVED',
+          completion_date: sectionProgressData?.completion_date ?? null,
+          status: sectionProgressData?.status ?? 'NOT_STARTED',
+          submitted_at: sectionProgressData?.submitted_at ?? null,
+          reviewed_at: sectionProgressData?.reviewed_at ?? null,
+          last_review_comment: sectionProgressData?.last_review_comment ?? null,
+          required: section.required ?? true,
         };
-      },
-    );
+      });
 
-    const modulesCompleted = modules.filter((m) => m.completed).length;
-    const modulesTotal = modules.length;
-    const progressPercentage =
-      modulesTotal > 0 ? (modulesCompleted / modulesTotal) * 100 : 0;
+      // Completo = todas las secciones requeridas aprobadas; la fecha es la
+      // de la última revisión que lo completó.
+      const required = sections.filter((s) => s.required);
+      const completed = required.every((s) => s.completed);
+      const reviewedTimes = required
+        .map((s) => s.reviewed_at?.getTime())
+        .filter((t): t is number => typeof t === 'number');
+
+      return {
+        module_id: module.module_id,
+        name: module.name,
+        completed,
+        completion_date:
+          completed && reviewedTimes.length > 0
+            ? new Date(Math.max(...reviewedTimes))
+            : null,
+        sections,
+      };
+    });
+
+    const { progress_percentage } = versionProgress(
+      versionModules,
+      statusBySection,
+    );
 
     return {
       enrollment_id: enrollment.enrollment_id,
       certification_id: enrollment.certification_id,
       certification_name: enrollment.certifications.name,
-      progress_percentage: Math.round(progressPercentage * 10) / 10,
+      progress_percentage,
       completion_status: enrollment.completion_status,
       status: enrollment.status,
       certified_at: enrollment.certified_at ?? null,
       summary: summarizeRequiredSections(
-        enrollment.certifications.certification_modules.flatMap((m) =>
+        versionModules.flatMap((m) =>
           m.certification_sections.map((s) => ({
             section_id: s.section_id,
             required: s.required ?? true,
           })),
         ),
-        new Map(sectionProgress.map((sp) => [sp.section_id, sp.status])),
+        statusBySection,
       ),
       enrollment_date: enrollment.enrollment_date,
       modules,

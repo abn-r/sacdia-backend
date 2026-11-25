@@ -74,6 +74,9 @@ const mockPrisma = {
   certification_section_progress: {
     findMany: jest.fn(),
   },
+  certification_modules: {
+    findMany: jest.fn(),
+  },
 };
 
 const mockEligibilityService = {
@@ -614,43 +617,90 @@ describe('CertificationsService', () => {
   // ==========================================================================
 
   describe('getUserCertifications', () => {
+    const VERSION_ID = 7;
     const userEnrollments = [
       {
         enrollment_id: ENROLLMENT_ID,
         certification_id: CERT_ID,
+        certification_version_id: VERSION_ID,
         enrollment_date: new Date('2026-01-01'),
         completion_status: false,
         active: true,
-        certifications: {
-          name: 'Guía Mayor Pro',
-          certification_modules: [
-            { module_id: MODULE_ID },
-            { module_id: MODULE_ID + 1 },
-          ],
-        },
+        status: 'IN_PROGRESS',
+        certified_at: null,
+        certifications: { name: 'Guía Mayor Pro' },
       },
     ];
+    // Two modules of version 7, two required sections each.
+    const versionModules = [
+      {
+        module_id: MODULE_ID,
+        certification_version_id: VERSION_ID,
+        certification_sections: [
+          { section_id: 1, required: true },
+          { section_id: 2, required: true },
+        ],
+      },
+      {
+        module_id: MODULE_ID + 1,
+        certification_version_id: VERSION_ID,
+        certification_sections: [
+          { section_id: 3, required: true },
+          { section_id: 4, required: true },
+          { section_id: 5, required: false },
+        ],
+      },
+    ];
+    const approved = (...ids: number[]) =>
+      ids.map((section_id) => ({
+        enrollment_id: ENROLLMENT_ID,
+        section_id,
+        status: 'APPROVED',
+      }));
 
-    it('TC14 - returns list with progress percentage', async () => {
+    it('TC14 - progress counts approved required sections of the enrollment version', async () => {
       mockPrisma.users_certifications.findMany.mockResolvedValue(
         userEnrollments,
       );
-      mockPrisma.certification_module_progress.count.mockResolvedValue(1);
+      mockPrisma.certification_modules.findMany.mockResolvedValue(
+        versionModules,
+      );
+      // Module 1 complete; one required section of module 2 approved; the
+      // optional section does not count.
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue(
+        approved(1, 2, 3, 5),
+      );
 
       const result = await service.getUserCertifications(USER_ID);
 
+      expect(mockPrisma.certification_modules.findMany).toHaveBeenCalledWith({
+        where: { certification_version_id: { in: [VERSION_ID] }, active: true },
+        select: {
+          module_id: true,
+          certification_version_id: true,
+          certification_sections: {
+            where: { active: true },
+            select: { section_id: true, required: true },
+          },
+        },
+      });
       expect(result).toHaveLength(1);
       expect(result[0].enrollment_id).toBe(ENROLLMENT_ID);
       expect(result[0].modules_total).toBe(2);
       expect(result[0].modules_completed).toBe(1);
-      expect(result[0].progress_percentage).toBe(50);
+      expect(result[0].progress_percentage).toBe(75);
     });
 
-    it('TC15 - 0% progress when no modules completed', async () => {
+    it('TC15 - 0% progress when no section is approved', async () => {
       mockPrisma.users_certifications.findMany.mockResolvedValue(
         userEnrollments,
       );
-      mockPrisma.certification_module_progress.count.mockResolvedValue(0);
+      mockPrisma.certification_modules.findMany.mockResolvedValue(
+        versionModules,
+      );
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue([
+        { enrollment_id: ENROLLMENT_ID, section_id: 1, status: 'SUBMITTED' },
+      ]);
 
       const result = await service.getUserCertifications(USER_ID);
 
@@ -658,16 +708,21 @@ describe('CertificationsService', () => {
       expect(result[0].modules_completed).toBe(0);
     });
 
-    it('TC16 - 100% progress when all modules completed', async () => {
+    it('TC16 - 100% progress when every required section is approved', async () => {
       mockPrisma.users_certifications.findMany.mockResolvedValue(
         userEnrollments,
       );
-      // 2 modules total, 2 completed
-      mockPrisma.certification_module_progress.count.mockResolvedValue(2);
+      mockPrisma.certification_modules.findMany.mockResolvedValue(
+        versionModules,
+      );
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue(
+        approved(1, 2, 3, 4),
+      );
 
       const result = await service.getUserCertifications(USER_ID);
 
       expect(result[0].progress_percentage).toBe(100);
+      expect(result[0].modules_completed).toBe(2);
     });
 
     it('TC17 - empty list when user has no active enrollments', async () => {
@@ -676,26 +731,59 @@ describe('CertificationsService', () => {
       const result = await service.getUserCertifications(USER_ID);
 
       expect(result).toEqual([]);
+      expect(mockPrisma.certification_modules.findMany).not.toHaveBeenCalled();
     });
 
-    it('TC18 - progress_percentage is 0 when certification has no modules', async () => {
-      const enrollmentNoModules = [
-        {
-          ...userEnrollments[0],
-          certifications: {
-            name: 'Empty Cert',
-            certification_modules: [],
-          },
-        },
-      ];
+    it('TC18 - progress_percentage is 0 when the version has no modules', async () => {
       mockPrisma.users_certifications.findMany.mockResolvedValue(
-        enrollmentNoModules,
+        userEnrollments,
       );
-      mockPrisma.certification_module_progress.count.mockResolvedValue(0);
+      mockPrisma.certification_modules.findMany.mockResolvedValue([]);
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue([]);
 
       const result = await service.getUserCertifications(USER_ID);
 
       expect(result[0].progress_percentage).toBe(0);
+      expect(result[0].modules_total).toBe(0);
+    });
+
+    it('TC18b - each enrollment uses only its own version tree', async () => {
+      mockPrisma.users_certifications.findMany.mockResolvedValue([
+        userEnrollments[0],
+        {
+          ...userEnrollments[0],
+          enrollment_id: ENROLLMENT_ID + 1,
+          certification_id: CERT_ID + 1,
+          certification_version_id: 9,
+        },
+      ]);
+      mockPrisma.certification_modules.findMany.mockResolvedValue([
+        ...versionModules,
+        {
+          module_id: 99,
+          certification_version_id: 9,
+          certification_sections: [{ section_id: 90, required: true }],
+        },
+      ]);
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue([
+        {
+          enrollment_id: ENROLLMENT_ID + 1,
+          section_id: 90,
+          status: 'APPROVED',
+        },
+      ]);
+
+      const result = await service.getUserCertifications(USER_ID);
+
+      expect(result[0]).toMatchObject({
+        modules_total: 2,
+        progress_percentage: 0,
+      });
+      expect(result[1]).toMatchObject({
+        modules_total: 1,
+        modules_completed: 1,
+        progress_percentage: 100,
+      });
     });
   });
 
@@ -706,50 +794,39 @@ describe('CertificationsService', () => {
   describe('getCertificationProgress', () => {
     const enrollmentWithDetails = {
       ...baseEnrollment,
-      certifications: {
-        name: 'Guía Mayor Pro',
-        certification_modules: [
-          {
-            module_id: MODULE_ID,
-            name: 'Módulo 1',
-            certification_sections: [
-              { section_id: SECTION_ID, name: 'Sección 1' },
-              { section_id: SECTION_ID + 1, name: 'Sección 2' },
-            ],
-          },
-        ],
-      },
+      certification_version_id: 7,
+      certifications: { name: 'Guía Mayor Pro' },
     };
-
-    const moduleProgressData = [
+    const versionModules = [
       {
         module_id: MODULE_ID,
-        completed: false,
-        completion_date: null,
+        name: 'Módulo 1',
+        certification_sections: [
+          { section_id: SECTION_ID, name: 'Sección 1', required: true },
+          { section_id: SECTION_ID + 1, name: 'Sección 2', required: true },
+        ],
       },
     ];
 
-    const sectionProgressData = [
-      {
-        section_id: SECTION_ID,
-        completed: true,
-        completion_date: new Date('2026-02-01'),
-      },
-    ];
-
-    it('TC19 - returns detailed progress with modules and sections', async () => {
+    it('TC19 - returns the version tree with modules and sections', async () => {
       mockPrisma.users_certifications.findFirst.mockResolvedValue(
         enrollmentWithDetails,
       );
-      mockPrisma.certification_module_progress.findMany.mockResolvedValue(
-        moduleProgressData,
+      mockPrisma.certification_modules.findMany.mockResolvedValue(
+        versionModules,
       );
-      mockPrisma.certification_section_progress.findMany.mockResolvedValue(
-        sectionProgressData,
-      );
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue([]);
 
       const result = await service.getCertificationProgress(USER_ID, CERT_ID);
 
+      expect(mockPrisma.certification_modules.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { certification_version_id: 7, active: true },
+        }),
+      );
+      expect(
+        mockPrisma.certification_section_progress.findMany,
+      ).toHaveBeenCalledWith({ where: { enrollment_id: ENROLLMENT_ID } });
       expect(result.enrollment_id).toBe(ENROLLMENT_ID);
       expect(result.certification_id).toBe(CERT_ID);
       expect(result.certification_name).toBe('Guía Mayor Pro');
@@ -758,26 +835,33 @@ describe('CertificationsService', () => {
       expect(result.modules[0].sections).toHaveLength(2);
     });
 
-    it('TC20 - section completed flag comes from sectionProgress data', async () => {
+    it('TC20 - module completes when every required section is approved', async () => {
+      const reviewedFirst = new Date('2026-02-01');
+      const reviewedLast = new Date('2026-03-01');
       mockPrisma.users_certifications.findFirst.mockResolvedValue(
         enrollmentWithDetails,
       );
-      mockPrisma.certification_module_progress.findMany.mockResolvedValue([]);
-      mockPrisma.certification_section_progress.findMany.mockResolvedValue(
-        sectionProgressData,
+      mockPrisma.certification_modules.findMany.mockResolvedValue(
+        versionModules,
       );
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue([
+        {
+          section_id: SECTION_ID,
+          status: 'APPROVED',
+          reviewed_at: reviewedFirst,
+        },
+        {
+          section_id: SECTION_ID + 1,
+          status: 'APPROVED',
+          reviewed_at: reviewedLast,
+        },
+      ]);
 
       const result = await service.getCertificationProgress(USER_ID, CERT_ID);
 
-      const section1 = result.modules[0].sections.find(
-        (s: { section_id: number }) => s.section_id === SECTION_ID,
-      );
-      const section2 = result.modules[0].sections.find(
-        (s: { section_id: number }) => s.section_id === SECTION_ID + 1,
-      );
-
-      expect(section1!.completed).toBe(true);
-      expect(section2!.completed).toBe(false);
+      expect(result.modules[0].completed).toBe(true);
+      expect(result.modules[0].completion_date).toEqual(reviewedLast);
+      expect(result.progress_percentage).toBe(100);
     });
 
     it('TC21 - not enrolled → NotFoundException', async () => {
@@ -788,24 +872,29 @@ describe('CertificationsService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
     });
 
-    it('TC22 - progress_percentage = 0 when no modules completed', async () => {
+    it('TC22 - progress_percentage = 0 when nothing is approved', async () => {
       mockPrisma.users_certifications.findFirst.mockResolvedValue(
         enrollmentWithDetails,
       );
-      mockPrisma.certification_module_progress.findMany.mockResolvedValue([]);
+      mockPrisma.certification_modules.findMany.mockResolvedValue(
+        versionModules,
+      );
       mockPrisma.certification_section_progress.findMany.mockResolvedValue([]);
 
       const result = await service.getCertificationProgress(USER_ID, CERT_ID);
 
       expect(result.progress_percentage).toBe(0);
+      expect(result.modules[0].completed).toBe(false);
+      expect(result.modules[0].completion_date).toBeNull();
     });
 
-    it('TC22b - versioned enrollment: completed is projected from status === APPROVED, not the legacy completed boolean', async () => {
-      mockPrisma.users_certifications.findFirst.mockResolvedValue({
-        ...enrollmentWithDetails,
-        certification_version_id: 7,
-      });
-      mockPrisma.certification_module_progress.findMany.mockResolvedValue([]);
+    it('TC22b - completed is projected from status === APPROVED, not the legacy completed boolean', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(
+        enrollmentWithDetails,
+      );
+      mockPrisma.certification_modules.findMany.mockResolvedValue(
+        versionModules,
+      );
       mockPrisma.certification_section_progress.findMany.mockResolvedValue([
         {
           section_id: SECTION_ID,
@@ -832,6 +921,8 @@ describe('CertificationsService', () => {
 
       expect(approvedSection!.completed).toBe(true);
       expect(submittedSection!.completed).toBe(false);
+      expect(result.modules[0].completed).toBe(false);
+      expect(result.progress_percentage).toBe(50);
     });
   });
 
@@ -1242,24 +1333,23 @@ describe('CertificationsService', () => {
           active: true,
           status: 'IN_PROGRESS',
           certified_at: null,
-          certifications: {
-            name: 'Guía Mayor Pro',
-            certification_modules: [
-              {
-                module_id: MODULE_ID,
-                certification_sections: [
-                  { section_id: 1, required: true },
-                  { section_id: 2, required: true },
-                  { section_id: 3, required: true },
-                  { section_id: 4, required: true },
-                  { section_id: 5, required: false },
-                ],
-              },
-            ],
-          },
+          certification_version_id: 7,
+          certifications: { name: 'Guía Mayor Pro' },
         },
       ]);
-      mockPrisma.certification_module_progress.count.mockResolvedValue(0);
+      mockPrisma.certification_modules.findMany.mockResolvedValue([
+        {
+          module_id: MODULE_ID,
+          certification_version_id: 7,
+          certification_sections: [
+            { section_id: 1, required: true },
+            { section_id: 2, required: true },
+            { section_id: 3, required: true },
+            { section_id: 4, required: true },
+            { section_id: 5, required: false },
+          ],
+        },
+      ]);
       mockPrisma.certification_section_progress.findMany.mockResolvedValue([
         { enrollment_id: ENROLLMENT_ID, section_id: 1, status: 'APPROVED' },
         { enrollment_id: ENROLLMENT_ID, section_id: 2, status: 'SUBMITTED' },
@@ -1294,22 +1384,19 @@ describe('CertificationsService', () => {
         status: 'CERTIFIED',
         certified_at: certifiedAt,
         certification_version_id: 7,
-        certifications: {
-          name: 'Guía Mayor Pro',
-          certification_modules: [
-            {
-              module_id: MODULE_ID,
-              name: 'Módulo 1',
-              certification_sections: [
-                { section_id: 1, name: 'S1', required: true },
-                { section_id: 2, name: 'S2', required: true },
-                { section_id: 3, name: 'S3', required: false },
-              ],
-            },
+        certifications: { name: 'Guía Mayor Pro' },
+      });
+      mockPrisma.certification_modules.findMany.mockResolvedValue([
+        {
+          module_id: MODULE_ID,
+          name: 'Módulo 1',
+          certification_sections: [
+            { section_id: 1, name: 'S1', required: true },
+            { section_id: 2, name: 'S2', required: true },
+            { section_id: 3, name: 'S3', required: false },
           ],
         },
-      });
-      mockPrisma.certification_module_progress.findMany.mockResolvedValue([]);
+      ]);
       const submittedAt = new Date('2026-02-01');
       mockPrisma.certification_section_progress.findMany.mockResolvedValue([
         {
