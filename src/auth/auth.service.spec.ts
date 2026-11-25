@@ -970,9 +970,10 @@ describe('AuthService', () => {
         expect(mockActingForCache.bump).toHaveBeenCalledWith('user-123');
       });
 
+      // Every catalog role now has a surface; `future-panel-role` stands for a global role without one.
       it('panel_only: needsPostRegistration false, stored complete reported as is, nothing written', async () => {
         mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-          profileOf(['director-union'], []),
+          profileOf(['future-panel-role'], []),
         );
         mockPrismaService.users.findUnique.mockResolvedValue(
           loginUser(incomplete),
@@ -2440,7 +2441,8 @@ describe('AuthService', () => {
 
       it.each([
         ['club_exempt', ['pastor'], []],
-        ['panel_only', ['director-union'], []],
+        ['club_exempt', ['director-union'], []],
+        ['panel_only', ['future-panel-role'], []],
         ['club', ['user'], []],
         ['club', ['pastor'], [{ assignment_id: 'a', status: 'pending' }]],
       ])(

@@ -13,6 +13,7 @@ import {
   ADMIN_SCOPE_ROLES,
   COORDINATOR_ROLES,
   DIVISION_ROLES,
+  FIELD_ADMIN_ROLES,
   LOCAL_FIELD_ROLES,
   ROLES_REQUIRING_LOCAL_FIELD,
   UNION_ROLES,
@@ -218,6 +219,25 @@ const coordinationHubView: CapabilityPredicate = globalRoleIn([
 ]);
 
 /**
+ * Platform admins and every field-level role (Local Field, Union, Division)
+ * with a configured territorial tier. False for `open` and `unconfigured`.
+ */
+const territorialSupervisor: CapabilityPredicate = every(
+  globalRoleIn([...PLATFORM_ADMINS, ...FIELD_ADMIN_ROLES]),
+  levelIn(...LEVELS_WITH_TERRITORY),
+);
+
+/**
+ * Union and Division roles, whatever their territory: the persona that gets
+ * the supervision surface in the app. Stays true when the territory is
+ * `unconfigured` so the account keeps `club_exempt` (never `panel_only`).
+ */
+const supervisionAppView: CapabilityPredicate = globalRoleIn([
+  ...UNION_ROLES,
+  ...DIVISION_ROLES,
+]);
+
+/**
  * Key → pure predicate. Keys are the capability catalog: the generator emits
  * `generated/capability-keys.ts` (and the admin/app copies) from them, and
  * the `Record<CapabilityKey, …>` type keeps both in sync at compile time.
@@ -232,7 +252,18 @@ export const CAPABILITY_DEFINITIONS: Record<
   // The app serves a home without a club to these accounts. It drives the
   // club_exempt onboarding mode (see onboarding-mode.ts); extending it to
   // more roles moves them from panel_only to club_exempt and nothing else.
-  'app.clubless_surface': some(pastorOnly, coordinationHubView),
+  'app.clubless_surface': some(
+    pastorOnly,
+    coordinationHubView,
+    supervisionAppView,
+  ),
+  // Mirrors `territorialSupervisor` for the app: the persona is decided by the
+  // role alone; every per-function key below still needs a configured tier.
+  'analytics.operations_dashboard': some(
+    territorialSupervisor,
+    globalRoleIn(COORDINATOR_ROLES),
+  ),
+  'annual_progress.view_territory': territorialSupervisor,
   'audit.read_system': globalRoleIn(SUPER_ADMIN_ONLY),
   'camporee_orders.configure_offering': levelIn('all', 'local_field', 'union'),
   'camporee_orders.issue': clubRoleIn(CLUB_ADMINISTRATIVE_STAFF),
@@ -272,6 +303,7 @@ export const CAPABILITY_DEFINITIONS: Record<
   'club_sections.create_active': clubRoleIn(CLUB_DIRECTION),
   'clubs.deactivate_active': clubRoleIn([ClubRole.DIRECTOR]),
   'clubs.manage_active': clubRoleIn(CLUB_MANAGEMENT_STAFF),
+  'clubs.view_territory': territorialSupervisor,
   'coordination.hub_view': coordinationHubView,
   // Writing zones and assignments is the local field's job; union and division
   // only read. Not `levelIn`: `admin` anchors in a union and would get `union`.
@@ -298,10 +330,13 @@ export const CAPABILITY_DEFINITIONS: Record<
   'rbac.manage': globalRoleIn(SUPER_ADMIN_ONLY),
   'rbac.mutate_global_roles': globalRoleIn(SUPER_ADMIN_ONLY),
   'rbac.view_user_roles': globalRoleIn(PLATFORM_ADMINS),
+  'requests.review_territory': territorialSupervisor,
   // Recompute a closed quarterly or annual report (support escape hatch).
   // Mirrors @ExactGlobalRoles(super-admin, admin) on the regenerate routes.
   'reports.regenerate_periodic': globalRoleIn(PLATFORM_ADMINS),
-  'reports.view_all': globalRoleIn([...PLATFORM_ADMINS, ...DIVISION_ROLES]),
+  // Platform admins only: División roles are scoped to their own division and
+  // read it through `reports.view_territory`.
+  'reports.view_all': globalRoleIn(PLATFORM_ADMINS),
   'reports.view_local_field': every(
     globalRoleIn([GlobalRole.ASSISTANT_ADMIN, ...LOCAL_FIELD_ROLES]),
     ({ territory }) => territory.local_field_id !== null,
@@ -312,6 +347,16 @@ export const CAPABILITY_DEFINITIONS: Record<
   // they keep reports:read for monthly reports and compliance.
   'reports.view_periodic': ({ canViewPeriodicReports }) =>
     canViewPeriodicReports,
+  'reports.view_territory': some(
+    every(
+      globalRoleIn(UNION_ROLES),
+      ({ territory }) => territory.union_id !== null,
+    ),
+    every(
+      globalRoleIn(DIVISION_ROLES),
+      ({ territory }) => territory.division_id !== null,
+    ),
+  ),
   'reports.view_union': every(
     globalRoleIn(UNION_ROLES),
     ({ territory }) => territory.union_id !== null,
@@ -329,8 +374,13 @@ export const CAPABILITY_DEFINITIONS: Record<
     ...COORDINATOR_ROLES,
     GlobalRole.PASTOR,
   ]),
+  'supervision.app_view': supervisionAppView,
   'system.config.read': globalRoleIn(ADMIN_SCOPE_ROLES),
   'system.jobs.run': globalRoleIn(SUPER_ADMIN_ONLY),
+  'union_camporees.approve_registrations': some(
+    globalRoleIn(SUPER_ADMIN_ONLY),
+    every(globalRoleIn(UNION_ROLES), levelIn('union')),
+  ),
   'units.manage': clubRoleIn(CLUB_ADMINISTRATIVE_STAFF),
   'users.create_in_scope': ({ assignableGlobalRoles }) =>
     assignableGlobalRoles.length > 0,

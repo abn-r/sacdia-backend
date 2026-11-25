@@ -138,6 +138,8 @@ const ACTORS: Array<{
     assignable: sorted([...T5, ...LF, ...UNION, ...DIA, 'admin']),
     capabilities: [
       'admin_panel.access',
+      'analytics.operations_dashboard',
+      'annual_progress.view_territory',
       'app.clubless_surface',
       'audit.read_system',
       'camporee_orders.configure_offering',
@@ -152,6 +154,7 @@ const ACTORS: Array<{
       'club_roles.assign_section',
       'club_roles.designate_director',
       'club_roles.succeed_director',
+      'clubs.view_territory',
       'coordination.hub_view',
       'coordination.manage',
       'field_payment_orders.review',
@@ -165,10 +168,12 @@ const ACTORS: Array<{
       'rbac.view_user_roles',
       'reports.regenerate_periodic',
       'reports.view_all',
+      'requests.review_territory',
       'scoring_categories.manage',
       'service_credentials.review',
       'system.config.read',
       'system.jobs.run',
+      'union_camporees.approve_registrations',
       'users.create_in_scope',
       'users.manage_in_scope',
       'users.update_admin_fields',
@@ -257,6 +262,8 @@ const ACTORS: Array<{
     assignable: sorted(T5),
     capabilities: [
       'admin_panel.access',
+      'analytics.operations_dashboard',
+      'annual_progress.view_territory',
       'app.clubless_surface',
       'camporee_orders.configure_offering',
       'camporee_orders.review_payment',
@@ -268,6 +275,7 @@ const ACTORS: Array<{
       'club_roles.assign_section',
       'club_roles.designate_director',
       'club_roles.succeed_director',
+      'clubs.view_territory',
       'coordination.hub_view',
       'coordination.manage',
       'field_payment_orders.review',
@@ -278,6 +286,7 @@ const ACTORS: Array<{
       'investiture.configure_field_window',
       'investiture.consult_field_window',
       'reports.view_local_field',
+      'requests.review_territory',
       'scoring_categories.manage',
       'service_credentials.review',
       'users.create_in_scope',
@@ -299,14 +308,22 @@ const ACTORS: Array<{
     assignable: sorted([...T5, ...LF]),
     capabilities: [
       'admin_panel.access',
+      'analytics.operations_dashboard',
+      'annual_progress.view_territory',
+      'app.clubless_surface',
       'camporee_orders.configure_offering',
       'camporee_supplies.configure',
       'club_enrollments.validate',
+      'clubs.view_territory',
       'folders.confirm_union',
       'folders.evaluate',
       'investiture.consult_field_window',
+      'reports.view_territory',
       'reports.view_union',
+      'requests.review_territory',
       'scoring_categories.manage',
+      'supervision.app_view',
+      'union_camporees.approve_registrations',
       'users.create_in_scope',
       'users.manage_in_scope',
     ],
@@ -326,11 +343,17 @@ const ACTORS: Array<{
     assignable: sorted([...T5, ...LF, ...UNION]),
     capabilities: [
       'admin_panel.access',
+      'analytics.operations_dashboard',
+      'annual_progress.view_territory',
+      'app.clubless_surface',
       'club_enrollments.validate',
+      'clubs.view_territory',
       'folders.evaluate',
       'investiture.consult_field_window',
-      'reports.view_all',
+      'reports.view_territory',
+      'requests.review_territory',
       'scoring_categories.manage',
+      'supervision.app_view',
       'users.create_in_scope',
       'users.manage_in_scope',
     ],
@@ -366,6 +389,7 @@ const ACTORS: Array<{
     assignable: [],
     capabilities: [
       'admin_panel.access',
+      'analytics.operations_dashboard',
       'app.clubless_surface',
       'club_enrollments.validate',
       'coordination.hub_view',
@@ -472,7 +496,7 @@ describe('capabilities catalog', () => {
       ...CAPABILITY_KEYS,
     ]);
     expect([...CAPABILITY_KEYS]).toEqual(sorted([...CAPABILITY_KEYS]));
-    expect(CAPABILITY_KEYS).toHaveLength(53);
+    expect(CAPABILITY_KEYS).toHaveLength(60);
   });
 
   describe.each(ACTORS)(
@@ -575,7 +599,7 @@ describe('capabilities catalog', () => {
       expect(computeCapabilities(fixture)).toEqual([]);
     });
 
-    it('app.clubless_surface is the role matrix of pastor-only plus the coordination hub', () => {
+    it('app.clubless_surface is the role matrix of pastor-only, the coordination hub and the supervision persona', () => {
       const surface = (...globalRoles: string[]) =>
         CAPABILITY_DEFINITIONS['app.clubless_surface'](
           buildCapabilityContext(resolvedFor({ globalRoles })),
@@ -590,21 +614,17 @@ describe('capabilities catalog', () => {
         'general-coordinator',
         'director-lf',
         'assistant-lf',
-      ]) {
-        expect([role, surface(role)]).toEqual([role, true]);
-      }
-      for (const role of [
-        'user',
         'director-union',
         'assistant-union',
         'director-dia',
         'assistant-dia',
       ]) {
-        expect([role, surface(role)]).toEqual([role, false]);
+        expect([role, surface(role)]).toEqual([role, true]);
       }
+      expect(['user', surface('user')]).toEqual(['user', false]);
       expect(surface()).toBe(false);
-      // pastor + union: not pastor-only and no hub role -> no surface.
-      expect(surface('pastor', 'director-union')).toBe(false);
+      // pastor + union: not pastor-only, but the supervision persona gives the surface.
+      expect(surface('pastor', 'director-union')).toBe(true);
       // pastor + user is a pastor with the base role only: not pastor-only.
       expect(surface('pastor', 'user')).toBe(false);
     });
@@ -869,5 +889,165 @@ describe('reports.regenerate_periodic', () => {
 
   it('a club director cannot', () => {
     expect(has(resolvedFor({ club: { role: 'director' } }))).toBe(false);
+  });
+});
+
+describe('territorial supervision capabilities', () => {
+  const KEYS = [
+    'supervision.app_view',
+    'union_camporees.approve_registrations',
+    'requests.review_territory',
+    'analytics.operations_dashboard',
+    'clubs.view_territory',
+    'reports.view_territory',
+    'annual_progress.view_territory',
+    'reports.view_all',
+    'app.clubless_surface',
+  ] as const satisfies readonly CapabilityKey[];
+
+  const held = (fixture: ResolvedAuthorizationProfile) =>
+    KEYS.filter((key) => computeCapabilities(fixture).includes(key)).sort();
+
+  const ALL_TERRITORIAL = [
+    'analytics.operations_dashboard',
+    'annual_progress.view_territory',
+    'clubs.view_territory',
+    'requests.review_territory',
+  ];
+
+  it.each(['director-union', 'assistant-union'])(
+    '%s with a union holds the Unión surface incl. camporee approval',
+    (role) => {
+      expect(
+        held(
+          resolvedFor({
+            globalRoles: [role],
+            global: { division: 1, union: 2 },
+          }),
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          'supervision.app_view',
+          'app.clubless_surface',
+          'union_camporees.approve_registrations',
+          'reports.view_territory',
+          ...ALL_TERRITORIAL,
+        ]),
+      );
+      expect(
+        held(
+          resolvedFor({
+            globalRoles: [role],
+            global: { division: 1, union: 2 },
+          }),
+        ),
+      ).not.toContain('reports.view_all');
+    },
+  );
+
+  it.each(['director-dia', 'assistant-dia'])(
+    '%s with a division holds the División surface, never camporee approval or view_all',
+    (role) => {
+      const keys = held(
+        resolvedFor({ globalRoles: [role], global: { division: 1 } }),
+      );
+      expect(keys).toEqual(
+        expect.arrayContaining([
+          'supervision.app_view',
+          'app.clubless_surface',
+          'reports.view_territory',
+          ...ALL_TERRITORIAL,
+        ]),
+      );
+      expect(keys).not.toContain('union_camporees.approve_registrations');
+      expect(keys).not.toContain('reports.view_all');
+    },
+  );
+
+  it.each([
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  ])(
+    '%s with an unconfigured territory keeps the persona and loses every per-function key',
+    (role) => {
+      const fixture = resolvedFor({ globalRoles: [role] });
+      expect(computeTerritory(fixture).level).toBe('unconfigured');
+      expect(held(fixture)).toEqual(
+        ['supervision.app_view', 'app.clubless_surface'].sort(),
+      );
+    },
+  );
+
+  it('a Union role without a union id (division anchor only) is unconfigured: no reports.view_territory', () => {
+    const keys = held(
+      resolvedFor({ globalRoles: ['director-union'], global: { division: 1 } }),
+    );
+    expect(keys).toContain('supervision.app_view');
+    expect(keys).not.toContain('reports.view_territory');
+  });
+
+  it.each(['director-lf', 'assistant-lf'])(
+    '%s with a field holds the territorial keys but not the supervision persona',
+    (role) => {
+      const keys = held(
+        resolvedFor({
+          globalRoles: [role],
+          global: { division: 1, union: 2, local_field: 3 },
+          profileLocalFieldId: 3,
+        }),
+      );
+      expect(keys).toEqual(expect.arrayContaining(ALL_TERRITORIAL));
+      expect(keys).not.toContain('supervision.app_view');
+      expect(keys).not.toContain('union_camporees.approve_registrations');
+      expect(keys).not.toContain('reports.view_territory');
+      expect(keys).not.toContain('reports.view_all');
+    },
+  );
+
+  it.each(['super-admin', 'admin'])(
+    '%s keeps reports.view_all and has no persona key',
+    (role) => {
+      const keys = held(
+        resolvedFor({ globalRoles: [role], global: { union: 2 } }),
+      );
+      expect(keys).toContain('reports.view_all');
+      expect(keys).not.toContain('supervision.app_view');
+      expect(keys).not.toContain('reports.view_territory');
+    },
+  );
+
+  it('super-admin approves union camporee registrations, admin does not', () => {
+    expect(held(resolvedFor({ globalRoles: ['super-admin'] }))).toContain(
+      'union_camporees.approve_registrations',
+    );
+    expect(
+      held(resolvedFor({ globalRoles: ['admin'], global: { union: 2 } })),
+    ).not.toContain('union_camporees.approve_registrations');
+  });
+
+  it('a coordinator only gets the operations dashboard', () => {
+    expect(held(resolvedFor({ globalRoles: ['user', 'coordinator'] }))).toEqual(
+      ['analytics.operations_dashboard', 'app.clubless_surface'],
+    );
+  });
+
+  it('pastor and plain user get none of the new keys', () => {
+    expect(held(resolvedFor({ globalRoles: ['pastor'] }))).toEqual([
+      'app.clubless_surface',
+    ]);
+    expect(held(resolvedFor({ globalRoles: ['user'] }))).toEqual([]);
+  });
+
+  it('a Union role plus pastor still holds the persona', () => {
+    expect(
+      held(
+        resolvedFor({
+          globalRoles: ['pastor', 'director-union'],
+          global: { union: 2 },
+        }),
+      ),
+    ).toContain('supervision.app_view');
   });
 });

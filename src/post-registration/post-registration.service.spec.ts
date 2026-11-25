@@ -170,7 +170,8 @@ describe('PostRegistrationService', () => {
         ? profileWith(['user'], visibleClub)
         : mode === 'club_exempt'
           ? profileWith(['pastor'])
-          : profileWith(['director-union']),
+          : // Every catalog role has a surface now; this stands for one without.
+            profileWith(['future-panel-role']),
     );
 
   const mockRoleEligibility = {

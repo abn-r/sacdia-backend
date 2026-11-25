@@ -333,9 +333,10 @@ describe('SocialSignInService', () => {
       expect(actingForCache.bump).toHaveBeenCalledWith('user-1');
     });
 
+    // Every catalog role now has a surface; `future-panel-role` stands for a global role without one.
     it('panel_only: never needs post-registration, nothing written', async () => {
       authorizationContext.resolveUserAuthorization.mockResolvedValue(
-        profileOf(['director-union'], []),
+        profileOf(['future-panel-role'], []),
       );
       prisma.users_pr.findUnique.mockResolvedValue({ complete: false });
       await expect(signIn()).resolves.toMatchObject({
