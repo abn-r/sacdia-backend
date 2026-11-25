@@ -330,6 +330,35 @@ describe('ClubEnrollmentReviewService.findQueue', () => {
   });
 });
 
+describe('ClubEnrollmentReviewService.countPending', () => {
+  it('counts pending enrollments with the exact where of the pending queue', async () => {
+    const ctx = setup();
+    ctx.prisma.club_enrollments.count.mockResolvedValue(3);
+
+    await expect(ctx.service.countPending(REVIEWER)).resolves.toBe(3);
+
+    expect(ctx.scope.resolveReviewerChannels).toHaveBeenCalledWith(
+      REVIEWER,
+      'club_enrollments:validate',
+      expect.objectContaining({ includeUnionDivision: true }),
+    );
+    const countWhere = ctx.prisma.club_enrollments.count.mock.calls[0][0].where;
+
+    await ctx.service.findQueue(REVIEWER, {});
+    const queueWhere =
+      ctx.prisma.club_enrollments.findMany.mock.calls[0][0].where;
+    expect(countWhere).toEqual(queueWhere);
+  });
+
+  it('excludes out-of-scope sections by delegating to the reviewer scope', async () => {
+    const ctx = setup();
+    await ctx.service.countPending(REVIEWER);
+    expect(ctx.scope.sectionsWhere).toHaveBeenCalledWith(CHANNELS);
+    const where = ctx.prisma.club_enrollments.count.mock.calls[0][0].where;
+    expect(JSON.stringify(where)).toContain(JSON.stringify(SECTIONS_WHERE));
+  });
+});
+
 describe('ClubEnrollmentReviewService decisions', () => {
   it('approve stamps the review, audits, creates the folder and notifies director and submitter', async () => {
     const ctx = setup();

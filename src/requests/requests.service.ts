@@ -510,6 +510,41 @@ export class RequestsService {
     });
   }
 
+  /**
+   * Pending requests the actor can DECIDE: transfers by destination section
+   * (as `reviewTransfer`) and role assignments by their section (as
+   * `reviewAssignment`), both through REQUESTS_REVIEW_SCOPE.
+   */
+  async countReviewable(
+    userId: string,
+  ): Promise<{ transfers: number; role_assignments: number }> {
+    const scope = await this.actorSectionScope.resolve(
+      userId,
+      REQUESTS_REVIEW_SCOPE,
+    );
+    if (!scope.all && isActorSectionScopeEmpty(scope)) {
+      return { transfers: 0, role_assignments: 0 };
+    }
+    const sectionWhere = scope.all ? undefined : clubSectionScopeWhere(scope);
+
+    const [transfers, role_assignments] = await Promise.all([
+      this.prisma.club_transfer_requests.count({
+        where: {
+          status: 'pending',
+          ...(sectionWhere ? { to_section: sectionWhere } : {}),
+        },
+      }),
+      this.prisma.role_assignment_requests.count({
+        where: {
+          status: 'pending',
+          ...(sectionWhere ? { club_section: sectionWhere } : {}),
+        },
+      }),
+    ]);
+
+    return { transfers, role_assignments };
+  }
+
   async getTransferRequest(requestId: string, viewerId: string) {
     const request = await this.prisma.club_transfer_requests.findUnique({
       where: { transfer_request_id: requestId },

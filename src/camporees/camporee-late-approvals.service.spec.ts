@@ -15,12 +15,76 @@ describe('CamporeeLateApprovalsService', () => {
   const lifecyclePolicy = {
     resolveClubRegistrationDisposition: jest.fn(),
   };
+  const camporeesService = {
+    buildUnionCamporeeScopeWhere: jest.fn(),
+  };
   const service = new (CamporeeLateApprovalsService as any)(
     prisma,
     lifecyclePolicy,
+    camporeesService,
   );
 
   beforeEach(() => jest.clearAllMocks());
+
+  describe('countUnionPending', () => {
+    const countPrisma = prisma as any;
+    countPrisma.camporee_clubs = { count: jest.fn() };
+    countPrisma.camporee_members = { count: jest.fn() };
+    countPrisma.camporee_payments = { count: jest.fn() };
+    const authorization = { grants: {} } as any;
+
+    it('sums clubs, members and payments through the shared territorial scope', async () => {
+      camporeesService.buildUnionCamporeeScopeWhere.mockReturnValue({
+        union_id: 7,
+      });
+      countPrisma.camporee_clubs.count.mockResolvedValue(2);
+      countPrisma.camporee_members.count.mockResolvedValue(3);
+      countPrisma.camporee_payments.count.mockResolvedValue(4);
+
+      await expect(service.countUnionPending(authorization)).resolves.toBe(9);
+
+      expect(
+        camporeesService.buildUnionCamporeeScopeWhere,
+      ).toHaveBeenCalledWith(authorization);
+      const scoped = { union_id: 7, active: true };
+      expect(countPrisma.camporee_clubs.count).toHaveBeenCalledWith({
+        where: {
+          status: 'pending_approval',
+          active: true,
+          union_camporees: scoped,
+        },
+      });
+      expect(countPrisma.camporee_members.count).toHaveBeenCalledWith({
+        where: {
+          status: 'pending_approval',
+          active: true,
+          union_camporees: scoped,
+        },
+      });
+      expect(countPrisma.camporee_payments.count).toHaveBeenCalledWith({
+        where: {
+          status: 'pending_approval',
+          camporee_member: { union_camporees: scoped },
+        },
+      });
+    });
+
+    it('excludes out-of-territory rows by delegating the division scope filter', async () => {
+      camporeesService.buildUnionCamporeeScopeWhere.mockReturnValue({
+        unions: { division_id: 3 },
+      });
+      countPrisma.camporee_clubs.count.mockResolvedValue(0);
+      countPrisma.camporee_members.count.mockResolvedValue(0);
+      countPrisma.camporee_payments.count.mockResolvedValue(0);
+
+      await expect(service.countUnionPending(authorization)).resolves.toBe(0);
+      expect(countPrisma.camporee_clubs.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          union_camporees: { unions: { division_id: 3 }, active: true },
+        }),
+      });
+    });
+  });
 
   it('does not approve a late club enrollment before registration opens', async () => {
     transaction.camporee_clubs.findFirst.mockResolvedValue({

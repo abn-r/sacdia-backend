@@ -830,6 +830,18 @@ export class AnnualFoldersService {
   }
 
   /**
+   * Folders waiting for evaluation inside the actor's reach: same access and
+   * status where as the default (`needs_review`) evaluation queue.
+   */
+  async countEvaluationQueue(userId: string): Promise<number> {
+    const where = this.composeEvaluationQueueWhere([
+      await this.buildEvaluationQueueAccessWhere(userId),
+      this.buildEvaluationQueueStatusWhere('needs_review'),
+    ]);
+    return this.prisma.annual_folders.count({ where });
+  }
+
+  /**
    * Get an annual evidence folder by ID with its template sections, evidences, and evaluations.
    */
   async getFolder(folderId: string, userId: string) {
@@ -1349,6 +1361,7 @@ export class AnnualFoldersService {
       clubSectionId: folder.club_enrollment.club_section_id,
       localFieldId: club.local_field_id ?? null,
       unionId: club.local_fields?.union_id ?? null,
+      divisionId: club.local_fields?.unions?.division_id ?? null,
     };
   }
 
@@ -1361,7 +1374,6 @@ export class AnnualFoldersService {
         club_section_id: true,
         club_section: {
           select: {
-      divisionId: club.local_fields?.unions?.division_id ?? null,
             clubs: {
               select: {
                 club_id: true,
@@ -1398,6 +1410,7 @@ export class AnnualFoldersService {
       clubSectionId: enrollment.club_section_id,
       localFieldId: club.local_field_id ?? null,
       unionId: club.local_fields?.union_id ?? null,
+      divisionId: club.local_fields?.unions?.division_id ?? null,
     };
   }
 
@@ -1410,7 +1423,6 @@ export class AnnualFoldersService {
         annual_folder: {
           select: {
             club_enrollment: {
-      divisionId: club.local_fields?.unions?.division_id ?? null,
               select: {
                 club_section_id: true,
                 club_section: {
@@ -1449,6 +1461,7 @@ export class AnnualFoldersService {
       clubSectionId: evidence!.annual_folder.club_enrollment.club_section_id,
       localFieldId: club.local_field_id ?? null,
       unionId: club.local_fields?.union_id ?? null,
+      divisionId: club.local_fields?.unions?.division_id ?? null,
     };
   }
 
@@ -1461,7 +1474,6 @@ export class AnnualFoldersService {
           active: true,
           role_category: 'GLOBAL',
           role_name: GlobalRole.SUPER_ADMIN,
-      divisionId: club.local_fields?.unions?.division_id ?? null,
         },
       },
       select: { user_role_id: true },

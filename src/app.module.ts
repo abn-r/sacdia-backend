@@ -48,6 +48,7 @@ import { QuarterlyReportsModule } from './quarterly-reports/quarterly-reports.mo
 import { AnnualReportsModule } from './annual-reports/annual-reports.module';
 import { ReportsModule } from './reports/reports.module';
 import { RequestsModule } from './requests/requests.module';
+import { SupervisionModule } from './supervision/supervision.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { YearEndModule } from './year-end/year-end.module';
 import { YearCutModule } from './year-cut/year-cut.module';
@@ -256,6 +257,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     AnnualReportsModule,
     ReportsModule,
     RequestsModule,
+    SupervisionModule,
     SystemConfigModule,
     YearEndModule,
     YearCutModule,

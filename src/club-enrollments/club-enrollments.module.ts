@@ -26,6 +26,6 @@ import { PrismaModule } from '../prisma/prisma.module';
     ReviewerScopeService,
     SectionBoardSnapshotService,
   ],
-  exports: [ClubEnrollmentsService],
+  exports: [ClubEnrollmentsService, ClubEnrollmentReviewService],
 })
 export class ClubEnrollmentsModule {}
