@@ -44,6 +44,39 @@ const adminProfile = () =>
     },
   }) as any;
 
+const divisionProfile = (divisionId?: number, role = 'director-dia') =>
+  ({
+    authorization: {
+      grants: {
+        global_roles: [{ role_name: role, permissions: ['reports:read'] }],
+        club_assignments: [],
+      },
+      active_assignment: { assignment_id: null },
+      effective: {
+        scope: {
+          global:
+            divisionId === undefined
+              ? {}
+              : { division: { id: divisionId, name: 'DIA' } },
+        },
+      },
+    },
+  }) as any;
+
+const unionProfile = (unionId: number) =>
+  ({
+    authorization: {
+      grants: {
+        global_roles: [
+          { role_name: 'director-union', permissions: ['reports:read'] },
+        ],
+        club_assignments: [],
+      },
+      active_assignment: { assignment_id: null },
+      effective: { scope: { global: { union: { id: unionId, name: 'U' } } } },
+    },
+  }) as any;
+
 const section = (
   clubSectionId: number,
   clubId: number,
@@ -364,6 +397,58 @@ describe('ReportsComplianceService', () => {
     const where = prisma.club_sections.findMany.mock.calls[0][0].where;
     expect(where.club_section_id).toBeUndefined();
     expect(where.clubs).toEqual({ local_field_id: 7 });
+  });
+
+  it('a division actor sees only its own division and filters only narrow it', async () => {
+    const { service, prisma, coordination } = setup({
+      profile: divisionProfile(5),
+    });
+
+    await service.getCompliance(
+      'dia-user',
+      { divisionId: 99, unionId: 20, localFieldId: 7 },
+      NOW,
+    );
+
+    expect(
+      coordination.getEffectiveCoordinatorSectionIds,
+    ).not.toHaveBeenCalled();
+    const where = prisma.club_sections.findMany.mock.calls[0][0].where;
+    expect(where.clubs).toEqual({
+      local_field_id: 7,
+      local_fields: { union_id: 20, unions: { division_id: 5 } },
+    });
+  });
+
+  it('a division actor with no filters is cut to its division', async () => {
+    const { service, prisma } = setup({
+      profile: divisionProfile(5, 'assistant-dia'),
+    });
+
+    await service.getCompliance('dia-user', {}, NOW);
+
+    const where = prisma.club_sections.findMany.mock.calls[0][0].where;
+    expect(where.clubs).toEqual({
+      local_fields: { unions: { division_id: 5 } },
+    });
+  });
+
+  it('a division actor without a derivable division is 403 ADMIN_USER_SCOPE_MISSING', async () => {
+    const { service, prisma } = setup({ profile: divisionProfile() });
+
+    await expect(
+      service.getCompliance('dia-user', {}, NOW),
+    ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+    expect(prisma.club_sections.findMany).not.toHaveBeenCalled();
+  });
+
+  it('a union actor stays on its own union (unchanged)', async () => {
+    const { service, prisma } = setup({ profile: unionProfile(20) });
+
+    await service.getCompliance('union-user', { unionId: 99 }, NOW);
+
+    const where = prisma.club_sections.findMany.mock.calls[0][0].where;
+    expect(where.clubs).toEqual({ local_fields: { union_id: 20 } });
   });
 
   it('paginates clubs while totals cover the whole scope', async () => {

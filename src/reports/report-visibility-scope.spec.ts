@@ -82,6 +82,59 @@ describe('report visibility scope', () => {
     });
   });
 
+  it.each(['director-dia', 'assistant-dia'])(
+    'forces %s to their own division and ANDs narrowing filters',
+    (role) => {
+      const scope = resolveReportVisibilityScope(
+        resolvedAuth({ globalRoles: [role], divisionId: 5 }),
+        { divisionId: 99, unionId: 20, localFieldId: 7 },
+      );
+
+      expect(scope).toEqual({
+        access: 'division',
+        divisionId: 5,
+        unionId: 20,
+        localFieldId: 7,
+      });
+      expect(buildReportClubWhere(scope)).toEqual({
+        local_field_id: 7,
+        local_fields: { union_id: 20, unions: { division_id: 5 } },
+      });
+    },
+  );
+
+  it('keeps a division actor inside its division when no filter is sent', () => {
+    const scope = resolveReportVisibilityScope(
+      resolvedAuth({ globalRoles: ['director-dia'], divisionId: 5 }),
+      {},
+    );
+
+    expect(scope).toEqual({ access: 'division', divisionId: 5 });
+    expect(buildReportClubWhere(scope)).toEqual({
+      local_fields: { unions: { division_id: 5 } },
+    });
+  });
+
+  it('rejects a division actor whose division cannot be derived', () => {
+    expect(() =>
+      resolveReportVisibilityScope(
+        resolvedAuth({ globalRoles: ['director-dia'], unionId: 20 }),
+        {},
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING }),
+    );
+  });
+
+  it('keeps platform admins global even with a division anchor', () => {
+    expect(
+      resolveReportVisibilityScope(
+        resolvedAuth({ globalRoles: ['super-admin'], divisionId: 5 }),
+        {},
+      ),
+    ).toEqual({ access: 'all' });
+  });
+
   it('forces union-tier actors to their own union while allowing narrower local-field filters', () => {
     const scope = resolveReportVisibilityScope(
       resolvedAuth({ globalRoles: ['director-union'], unionId: 20 }),

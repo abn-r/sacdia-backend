@@ -7,9 +7,14 @@ import { GlobalRole } from './roles';
  * annual). `src/reports/report-visibility-scope.ts` resolves the scope with
  * them; the capability `reports.view_periodic` reads the same sets.
  */
-export const ALL_REPORTS_ROLES: ReadonlySet<string> = new Set([
+/** Platform admins: reports of every territory. */
+export const PLATFORM_REPORTS_ROLES: ReadonlySet<string> = new Set([
   GlobalRole.SUPER_ADMIN,
   GlobalRole.ADMIN,
+]);
+
+/** División roles: reports of their own division only. */
+export const DIVISION_REPORTS_ROLES: ReadonlySet<string> = new Set([
   GlobalRole.DIRECTOR_DIA,
   GlobalRole.ASSISTANT_DIA,
 ]);
@@ -57,7 +62,8 @@ export function isCoordinatorOnlyForPeriodicReports(
 ): boolean {
   const actor = ActorScope.from(resolved);
   if (
-    actor.hasAnyRole(ALL_REPORTS_ROLES) ||
+    actor.hasAnyRole(PLATFORM_REPORTS_ROLES) ||
+    actor.hasAnyRole(DIVISION_REPORTS_ROLES) ||
     actor.hasAnyRole(UNION_REPORTS_ROLES) ||
     actor.hasAnyRole(LOCAL_FIELD_REPORTS_ROLES)
   ) {
@@ -84,7 +90,8 @@ export function canViewPeriodicReports(
 
   const actor = ActorScope.from(resolved);
   if (
-    actor.hasAnyRole(ALL_REPORTS_ROLES) ||
+    actor.hasAnyRole(PLATFORM_REPORTS_ROLES) ||
+    actor.hasAnyRole(DIVISION_REPORTS_ROLES) ||
     actor.hasAnyRole(UNION_REPORTS_ROLES) ||
     actor.hasAnyRole(LOCAL_FIELD_REPORTS_ROLES)
   ) {

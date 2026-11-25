@@ -5,9 +5,10 @@ import { ActorScope } from '../common/authorization/actor-scope';
 import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
 import {
   activeGrantSectionId,
-  ALL_REPORTS_ROLES,
   COORDINATOR_REPORT_ROLES,
+  DIVISION_REPORTS_ROLES,
   LOCAL_FIELD_REPORTS_ROLES,
+  PLATFORM_REPORTS_ROLES,
   UNION_REPORTS_ROLES,
 } from '../common/authorization/periodic-reports-access';
 
@@ -21,6 +22,12 @@ export type ReportVisibilityScope =
   | {
       access: 'all';
       divisionId?: number;
+      unionId?: number;
+      localFieldId?: number;
+    }
+  | {
+      access: 'division';
+      divisionId: number;
       unionId?: number;
       localFieldId?: number;
     }
@@ -47,7 +54,8 @@ export function needsCoordinatorReportSections(
 ): boolean {
   const actor = ActorScope.from(resolved);
   if (
-    actor.hasAnyRole(ALL_REPORTS_ROLES) ||
+    actor.hasAnyRole(PLATFORM_REPORTS_ROLES) ||
+    actor.hasAnyRole(DIVISION_REPORTS_ROLES) ||
     actor.hasAnyRole(UNION_REPORTS_ROLES) ||
     actor.hasAnyRole(LOCAL_FIELD_REPORTS_ROLES)
   ) {
@@ -93,12 +101,31 @@ export function resolveReportVisibilityScope(
 ): ReportVisibilityScope {
   const actor = ActorScope.from(resolved);
 
-  if (actor.hasAnyRole(ALL_REPORTS_ROLES)) {
+  if (actor.hasAnyRole(PLATFORM_REPORTS_ROLES)) {
     return {
       access: 'all',
       ...(filters.divisionId !== undefined && {
         divisionId: filters.divisionId,
       }),
+      ...(filters.unionId !== undefined && { unionId: filters.unionId }),
+      ...(filters.localFieldId !== undefined && {
+        localFieldId: filters.localFieldId,
+      }),
+    };
+  }
+
+  if (actor.hasAnyRole(DIVISION_REPORTS_ROLES)) {
+    const divisionId = actor.divisionId;
+
+    if (typeof divisionId !== 'number') {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+
+    // The client filters only narrow inside the division: `buildReportClubWhere`
+    // ANDs them with the division, so another division's ids return nothing.
+    return {
+      access: 'division',
+      divisionId,
       ...(filters.unionId !== undefined && { unionId: filters.unionId }),
       ...(filters.localFieldId !== undefined && {
         localFieldId: filters.localFieldId,
