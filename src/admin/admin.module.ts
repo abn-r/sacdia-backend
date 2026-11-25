@@ -19,6 +19,7 @@ import { AdminNotificationsService } from './admin-notifications.service';
 import { AdminReferenceService } from './admin-reference.service';
 import { AdminUsersService } from './admin-users.service';
 import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
+import { HonorAssetsService } from './honor-assets.service';
 import { AdminCronAlertsService } from './admin-cron-alerts.service';
 import { AdminCronJobsService } from './cron-jobs/admin-cron-jobs.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
@@ -61,6 +62,7 @@ import { LinkedDeviceModule } from '../auth/device/linked-device.module';
     AdminCronJobsController,
   ],
   providers: [
+    HonorAssetsService,
     AdminAuthService,
     AdminCamporeeEventTypesService,
     AdminGeographyService,

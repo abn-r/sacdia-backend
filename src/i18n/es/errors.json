@@ -260,6 +260,7 @@
   "HONOR_FILE_UPLOAD_FAILED": "Error al subir los archivos del honor",
   "HONOR_FILE_INVALID_FORMAT": "Formato de archivo no válido. Permitidos: {allowed}",
   "HONOR_FILE_TOO_LARGE": "El archivo supera el tamaño máximo de {max_mb} MB",
+  "HONOR_ASSET_FILE_REQUIRED": "Se requiere un archivo (campo multipart: file)",
   "HONOR_USER_NOT_ENROLLED": "El usuario no está inscrito en este honor",
   "HONOR_REQUIREMENT_NOT_IN_HONOR": "El requisito no pertenece a este honor",
   "HONOR_EVIDENCE_MAX_REACHED": "Se alcanzó el máximo de {max} evidencias de tipo {evidence_type} por requisito",

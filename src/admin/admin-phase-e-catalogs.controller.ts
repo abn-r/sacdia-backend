@@ -52,13 +52,20 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import 'multer';
 import type { Request as ExpressRequest } from 'express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiQuery,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import {
@@ -72,6 +79,7 @@ import {
   PermissionsGuard,
 } from '../common/guards';
 import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
+import { HonorAssetsService } from './honor-assets.service';
 import {
   CreateClassDto,
   UpdateClassDto,
@@ -90,6 +98,7 @@ import {
   CreateClassHonorDto,
   UpdateClassHonorDto,
   CreateClassPrerequisiteDto,
+  UploadHonorAssetQueryDto,
 } from './dto/phase-e-catalogs.dto';
 import { GlobalRole } from '../common/authorization/roles';
 
@@ -100,7 +109,10 @@ import { GlobalRole } from '../common/authorization/roles';
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminPhaseECatalogsController {
-  constructor(private readonly catalogsService: AdminPhaseECatalogsService) {}
+  constructor(
+    private readonly catalogsService: AdminPhaseECatalogsService,
+    private readonly honorAssets: HonorAssetsService,
+  ) {}
 
   private getActorId(
     request: ExpressRequest & { user: { sub: string } },
@@ -600,6 +612,47 @@ export class AdminPhaseECatalogsController {
   })
   async findAllHonors() {
     const data = await this.catalogsService.findAllHonors();
+    return { status: 'success', data };
+  }
+
+  /**
+   * Uploads an honor image or material PDF and returns its public URL. The
+   * form saves that URL with create or update, so it also works before the
+   * honor exists. Either honors:create or honors:update allows it.
+   */
+  @Post('honors-catalog/assets')
+  @RequirePermissions({
+    permissions: ['honors:create', 'honors:update'],
+    mode: 'any',
+  })
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload an honor image or material PDF',
+    description:
+      'kind=image: PNG, JPEG or WebP up to 5 MB. kind=material: PDF up to 10 MB. The MIME must match the file bytes. Returns the public URL to save in honor_image or material_url.',
+  })
+  @ApiQuery({ name: 'kind', enum: ['image', 'material'] })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: '{ kind, url, key }' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'HONOR_ASSET_FILE_REQUIRED, FILE_TYPE_INVALID or HONOR_FILE_TOO_LARGE',
+  })
+  async uploadHonorAsset(
+    @Query() query: UploadHonorAssetQueryDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    const data = await this.honorAssets.upload(query.kind, file);
     return { status: 'success', data };
   }
 
