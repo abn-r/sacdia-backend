@@ -10,6 +10,10 @@ import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { ListCertificationEnrollmentsDto } from './dto/list-certification-enrollments.dto';
 import { Prisma } from '@prisma/client';
 import {
+  accentInsensitiveMatchSql,
+  searchTokens,
+} from '../common/search/accent-insensitive';
+import {
   AppBadRequestException,
   AppConflictException,
   AppException,
@@ -405,8 +409,10 @@ export class CertificationsService {
 
   /**
    * Listar inscritos de una certificación (vista administrativa, paginada).
-   * Progreso = misma regla que getCertificationProgress (módulos completados /
-   * módulos totales), calculado en lote para la página (sin N+1).
+   * Progreso = secciones requeridas aprobadas / secciones requeridas de la
+   * versión a la que está ligada cada inscripción (motor configurable; el
+   * booleano legado de módulos ya no se escribe). Calculado en lote para la
+   * página (sin N+1).
    */
   async listCertificationEnrollments(
     certificationId: number,
@@ -414,10 +420,7 @@ export class CertificationsService {
   ) {
     const certification = await this.prisma.certifications.findUnique({
       where: { certification_id: certificationId },
-      select: {
-        certification_id: true,
-        certification_modules: { select: { module_id: true } },
-      },
+      select: { certification_id: true },
     });
     if (!certification) {
       throw new AppNotFoundException(ErrorCode.CERT_NOT_FOUND);
@@ -425,34 +428,33 @@ export class CertificationsService {
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const tokens = (query.search ?? '').trim().split(/\s+/).filter(Boolean);
+    const tokens = searchTokens(query.search);
+
+    // Name search ignores case and accents («Perez» finds «Pérez»). Prisma
+    // cannot fold accents, so the matching enrollments are found in SQL first.
+    let matchingEnrollmentIds: number[] | null = null;
+    if (tokens.length > 0) {
+      const matches = await this.prisma.$queryRaw<{ enrollment_id: number }[]>(
+        Prisma.sql`
+          SELECT uc.enrollment_id
+          FROM users_certifications uc
+          JOIN users u ON u.user_id = uc.user_id
+          WHERE uc.certification_id = ${certificationId}
+            AND uc.active = TRUE
+            AND ${accentInsensitiveMatchSql(
+              ['u.name', 'u.paternal_last_name', 'u.maternal_last_name'],
+              tokens,
+            )}`,
+      );
+      matchingEnrollmentIds = matches.map((m) => Number(m.enrollment_id));
+    }
 
     const where: Prisma.users_certificationsWhereInput = {
       certification_id: certificationId,
       active: true,
       ...(query.status ? { status: query.status } : {}),
-      ...(tokens.length > 0
-        ? {
-            AND: tokens.map((token) => ({
-              users: {
-                OR: [
-                  { name: { contains: token, mode: 'insensitive' as const } },
-                  {
-                    paternal_last_name: {
-                      contains: token,
-                      mode: 'insensitive' as const,
-                    },
-                  },
-                  {
-                    maternal_last_name: {
-                      contains: token,
-                      mode: 'insensitive' as const,
-                    },
-                  },
-                ],
-              },
-            })),
-          }
+      ...(matchingEnrollmentIds !== null
+        ? { enrollment_id: { in: matchingEnrollmentIds } }
         : {}),
     };
 
@@ -463,6 +465,7 @@ export class CertificationsService {
         select: {
           enrollment_id: true,
           user_id: true,
+          certification_version_id: true,
           status: true,
           enrollment_date: true,
           users: {
@@ -480,24 +483,34 @@ export class CertificationsService {
     ]);
 
     const userIds = [...new Set(rows.map((r) => r.user_id))];
-    const moduleIds = certification.certification_modules.map(
-      (m) => m.module_id,
-    );
-    const modulesTotal = moduleIds.length;
+    const enrollmentIds = rows.map((r) => r.enrollment_id);
+    const versionIds = [
+      ...new Set(rows.map((r) => r.certification_version_id)),
+    ];
 
-    const [moduleRows, assignmentRows] =
-      userIds.length > 0
+    const [versionModules, approvedRows, assignmentRows] =
+      rows.length > 0
         ? await Promise.all([
-            modulesTotal > 0
-              ? this.prisma.certification_module_progress.findMany({
-                  where: {
-                    user_id: { in: userIds },
-                    module_id: { in: moduleIds },
-                    completed: true,
-                  },
-                  select: { user_id: true, module_id: true },
-                })
-              : Promise.resolve([]),
+            this.prisma.certification_modules.findMany({
+              where: {
+                certification_version_id: { in: versionIds },
+                active: true,
+              },
+              select: {
+                certification_version_id: true,
+                certification_sections: {
+                  where: { active: true, required: true },
+                  select: { section_id: true },
+                },
+              },
+            }),
+            this.prisma.certification_section_progress.findMany({
+              where: {
+                enrollment_id: { in: enrollmentIds },
+                status: 'APPROVED',
+              },
+              select: { enrollment_id: true, section_id: true },
+            }),
             this.prisma.club_role_assignments.findMany({
               where: {
                 user_id: { in: userIds },
@@ -517,13 +530,25 @@ export class CertificationsService {
               orderBy: [{ start_date: 'desc' }, { assignment_id: 'desc' }],
             }),
           ])
-        : [[], []];
+        : [[], [], []];
 
-    const completedByUser = new Map<string, Set<number>>();
-    for (const row of moduleRows) {
-      const set = completedByUser.get(row.user_id) ?? new Set<number>();
-      set.add(row.module_id);
-      completedByUser.set(row.user_id, set);
+    const requiredByVersion = new Map<number, Set<number>>();
+    for (const module of versionModules) {
+      const set =
+        requiredByVersion.get(module.certification_version_id) ??
+        new Set<number>();
+      for (const section of module.certification_sections) {
+        set.add(section.section_id);
+      }
+      requiredByVersion.set(module.certification_version_id, set);
+    }
+    const approvedByEnrollment = new Map<number, Set<number>>();
+    for (const row of approvedRows) {
+      if (row.enrollment_id === null) continue;
+      const set =
+        approvedByEnrollment.get(row.enrollment_id) ?? new Set<number>();
+      set.add(row.section_id);
+      approvedByEnrollment.set(row.enrollment_id, set);
     }
 
     // Primera asignación activa más reciente por usuario.
@@ -540,9 +565,17 @@ export class CertificationsService {
     }
 
     const items = rows.map((r) => {
-      const completed = completedByUser.get(r.user_id)?.size ?? 0;
+      const required =
+        requiredByVersion.get(r.certification_version_id) ?? new Set<number>();
+      const approved = approvedByEnrollment.get(r.enrollment_id);
+      let approvedRequired = 0;
+      for (const sectionId of required) {
+        if (approved?.has(sectionId)) approvedRequired += 1;
+      }
       const percent =
-        modulesTotal > 0 ? Math.round((completed / modulesTotal) * 100) : 0;
+        required.size > 0
+          ? Math.round((approvedRequired / required.size) * 100)
+          : 0;
       const place = placeByUser.get(r.user_id);
       return {
         enrollment_id: r.enrollment_id,
