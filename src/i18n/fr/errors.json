@@ -257,6 +257,7 @@
   "HONOR_FILE_UPLOAD_FAILED": "Échec du téléversement des fichiers d'honneur",
   "HONOR_FILE_INVALID_FORMAT": "Format de fichier invalide. Autorisés : {allowed}",
   "HONOR_FILE_TOO_LARGE": "Le fichier dépasse la taille maximale de {max_mb} MB",
+  "HONOR_ASSET_FILE_REQUIRED": "Un fichier est requis (champ multipart : file)",
   "HONOR_USER_NOT_ENROLLED": "L'utilisateur n'est pas inscrit à cet honneur",
   "HONOR_REQUIREMENT_NOT_IN_HONOR": "L'exigence n'appartient pas à cet honneur",
   "HONOR_EVIDENCE_MAX_REACHED": "Maximum de {max} preuves de type {evidence_type} par exigence atteint",

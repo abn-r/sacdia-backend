@@ -28,6 +28,8 @@ import {
 } from 'class-validator';
 import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
+import { HONOR_ASSET_KINDS } from '../honor-assets.service';
+import type { HonorAssetKind } from '../honor-assets.service';
 import {
   master_honor_applicability_scope_enum,
   master_honor_requirement_group_type_enum,
@@ -663,4 +665,10 @@ export class CreateClassPrerequisiteDto {
   @IsInt()
   @Min(1)
   prerequisite_class_id!: number;
+}
+
+export class UploadHonorAssetQueryDto {
+  @ApiProperty({ enum: HONOR_ASSET_KINDS, example: 'image' })
+  @IsIn(HONOR_ASSET_KINDS)
+  kind!: HonorAssetKind;
 }
