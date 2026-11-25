@@ -48,6 +48,8 @@ const baseline = {
     'effectiveWhere|T08|3|93f3d967bce4',
   'classes/class-requirement-eligibility.service.ts':
     'effectiveWhere|T08|2|a3be28c9e1b2',
+  'certifications/certifications.service.ts':
+    'effectiveWhere|T09|1|31f8e0c40510',
   'certifications/eligibility/eligibility-rule-handlers.ts':
     'effectiveWhere|T08|2|9841f0b29dc2',
   'clubs/club-role-candidates.queries.ts':
