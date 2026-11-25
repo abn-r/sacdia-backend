@@ -314,6 +314,32 @@ export class RbacService {
     return updated;
   }
 
+  /**
+   * Fuente única del conteo que bloquea la desactivación de un rol y que
+   * muestra el admin en el diálogo (getRoleUsage). Solo cuenta users_roles.
+   */
+  private countActiveRoleAssignments(roleId: string): Promise<number> {
+    return this.prisma.users_roles.count({
+      where: { role_id: roleId, active: true },
+    });
+  }
+
+  async getRoleUsage(roleId: string) {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_id: true },
+    });
+
+    if (!role) {
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        id: roleId,
+      });
+    }
+
+    const usersCount = await this.countActiveRoleAssignments(roleId);
+    return { role_id: roleId, users_count: usersCount };
+  }
+
   async deactivateRole(roleId: string) {
     const role = await this.prisma.roles.findUnique({
       where: { role_id: roleId },
@@ -330,9 +356,7 @@ export class RbacService {
     }
 
     // Count active user assignments for this role
-    const assignedCount = await this.prisma.users_roles.count({
-      where: { role_id: roleId, active: true },
-    });
+    const assignedCount = await this.countActiveRoleAssignments(roleId);
 
     if (assignedCount > 0) {
       throw new AppConflictException(ErrorCode.RBAC_ROLE_HAS_ASSIGNMENTS, {

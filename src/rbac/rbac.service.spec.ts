@@ -853,6 +853,37 @@ describe('RbacService', () => {
     });
   });
 
+  describe('getRoleUsage', () => {
+    it('returns the active users_roles count with the same where as deactivateRole', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockPrismaService.users_roles.count.mockResolvedValue(4);
+
+      const usage = await service.getRoleUsage(ROLE_ID);
+
+      expect(usage).toEqual({ role_id: ROLE_ID, users_count: 4 });
+      expect(mockPrismaService.users_roles.count).toHaveBeenCalledWith({
+        where: { role_id: ROLE_ID, active: true },
+      });
+
+      // deactivateRole blocks with exactly the number reported by getRoleUsage
+      await expect(service.deactivateRole(ROLE_ID)).rejects.toMatchObject({
+        code: ErrorCode.RBAC_ROLE_HAS_ASSIGNMENTS,
+      });
+      expect(mockPrismaService.users_roles.count).toHaveBeenLastCalledWith({
+        where: { role_id: ROLE_ID, active: true },
+      });
+    });
+
+    it('throws RBAC_ROLE_NOT_FOUND when the role does not exist', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(null);
+
+      await expect(service.getRoleUsage(ROLE_ID)).rejects.toMatchObject({
+        code: ErrorCode.RBAC_ROLE_NOT_FOUND,
+      });
+      expect(mockPrismaService.users_roles.count).not.toHaveBeenCalled();
+    });
+  });
+
   describe('syncRolePermissions', () => {
     it('TC25 - happy path: adds new permissions and removes unlisted ones', async () => {
       // Current active: PERMISSION_ID. Desired: PERMISSION_ID_2
