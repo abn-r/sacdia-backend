@@ -603,3 +603,179 @@ describe('QuarterlyReportsService.freezeDueReports (daily catch-up)', () => {
     expect(store.rows).toHaveLength(0);
   });
 });
+
+describe('QuarterlyReportsService division scope', () => {
+  const profile = (roles: string[], scope: Record<string, unknown> = {}) =>
+    ({
+      authorization: {
+        grants: {
+          global_roles: roles.map((role_name) => ({
+            role_name,
+            permissions: ['reports:read'],
+            scope: {},
+          })),
+          club_assignments: [],
+        },
+        active_assignment: { assignment_id: null },
+        effective: { scope: { global: scope } },
+      },
+    }) as any;
+
+  const DIVISION = { division: { id: 5, name: 'DIA' } };
+
+  function setup(resolved: any) {
+    const prisma: any = {
+      quarterly_reports: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      clubs: {
+        findUnique: jest.fn().mockResolvedValue({ club_id: 10, active: true }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const auth: any = {
+      resolveUserAuthorization: jest.fn().mockResolvedValue(resolved),
+    };
+    const service = new QuarterlyReportsService(
+      prisma,
+      auth,
+      undefined,
+      {} as any,
+    );
+    return { service, prisma };
+  }
+
+  it('list: a division actor is cut to its division and filters only narrow', async () => {
+    const { service, prisma } = setup(profile(['director-dia'], DIVISION));
+
+    await service.listForAdmin('dia-user', {
+      divisionId: 99,
+      unionId: 20,
+      localFieldId: 7,
+    });
+
+    expect(prisma.quarterly_reports.count).toHaveBeenCalledWith({
+      where: {
+        club: {
+          local_field_id: 7,
+          local_fields: { union_id: 20, unions: { division_id: 5 } },
+        },
+      },
+    });
+  });
+
+  it('list: another division in the filter never widens the scope', async () => {
+    const { service, prisma } = setup(profile(['assistant-dia'], DIVISION));
+
+    await service.listForAdmin('dia-user', { divisionId: 99 });
+
+    expect(prisma.quarterly_reports.count).toHaveBeenCalledWith({
+      where: { club: { local_fields: { unions: { division_id: 5 } } } },
+    });
+  });
+
+  it('list: a division actor without a derivable division is ADMIN_USER_SCOPE_MISSING', async () => {
+    const { service, prisma } = setup(profile(['director-dia']));
+
+    await expect(service.listForAdmin('dia-user', {})).rejects.toMatchObject({
+      code: ErrorCode.ADMIN_USER_SCOPE_MISSING,
+    });
+    expect(prisma.quarterly_reports.count).not.toHaveBeenCalled();
+  });
+
+  it('list: platform admins stay global', async () => {
+    const { service, prisma } = setup(profile(['admin'], DIVISION));
+
+    await service.listForAdmin('admin-user', {});
+
+    expect(prisma.quarterly_reports.count).toHaveBeenCalledWith({ where: {} });
+  });
+
+  it('list: a union actor stays on its own union (unchanged)', async () => {
+    const { service, prisma } = setup(
+      profile(['director-union'], { union: { id: 20, name: 'U' } }),
+    );
+
+    await service.listForAdmin('union-user', { unionId: 99 });
+
+    expect(prisma.quarterly_reports.count).toHaveBeenCalledWith({
+      where: { club: { local_fields: { union_id: 20 } } },
+    });
+  });
+
+  it('by id: the lookup is cut to the division and a report outside it is 404', async () => {
+    const { service, prisma } = setup(profile(['director-dia'], DIVISION));
+
+    await expect(
+      service.assertReportVisibleToActor('dia-user', 77),
+    ).rejects.toMatchObject({ code: ErrorCode.QUARTERLY_REPORT_NOT_FOUND });
+
+    expect(prisma.quarterly_reports.findFirst).toHaveBeenCalledWith({
+      where: {
+        quarterly_report_id: 77,
+        club: { local_fields: { unions: { division_id: 5 } } },
+      },
+      select: { quarterly_report_id: true },
+    });
+  });
+
+  it('by id: a report inside the division is allowed', async () => {
+    const { service, prisma } = setup(profile(['director-dia'], DIVISION));
+    prisma.quarterly_reports.findFirst.mockResolvedValue({
+      quarterly_report_id: 77,
+    });
+
+    await expect(
+      service.assertReportVisibleToActor('dia-user', 77),
+    ).resolves.toBeUndefined();
+  });
+
+  it('by id: platform admins are not cut (unchanged)', async () => {
+    const { service, prisma } = setup(profile(['super-admin']));
+    prisma.quarterly_reports.findFirst.mockResolvedValue({
+      quarterly_report_id: 77,
+    });
+
+    await service.assertReportVisibleToActor('admin-user', 77);
+
+    expect(prisma.quarterly_reports.findFirst).toHaveBeenCalledWith({
+      where: { quarterly_report_id: 77 },
+      select: { quarterly_report_id: true },
+    });
+  });
+
+  it('per club: a club outside the division is 403 GUARD_PERMISSION_DENIED', async () => {
+    const { service, prisma } = setup(profile(['director-dia'], DIVISION));
+
+    await expect(
+      service.assertClubVisibleToActor('dia-user', 10),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+
+    expect(prisma.clubs.findFirst).toHaveBeenCalledWith({
+      where: {
+        club_id: 10,
+        local_fields: { unions: { division_id: 5 } },
+      },
+      select: { club_id: true },
+    });
+  });
+
+  it('per club: a club inside the division is allowed', async () => {
+    const { service, prisma } = setup(profile(['director-dia'], DIVISION));
+    prisma.clubs.findFirst.mockResolvedValue({ club_id: 10 });
+
+    await expect(
+      service.assertClubVisibleToActor('dia-user', 10),
+    ).resolves.toBeUndefined();
+  });
+
+  it('per club: platform admins skip the territory lookup (unchanged)', async () => {
+    const { service, prisma } = setup(profile(['super-admin']));
+
+    await service.assertClubVisibleToActor('admin-user', 10);
+
+    expect(prisma.clubs.findFirst).not.toHaveBeenCalled();
+  });
+});

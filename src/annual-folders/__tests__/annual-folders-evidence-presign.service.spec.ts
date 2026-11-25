@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualFoldersService } from '../annual-folders.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   FILE_STORAGE_SERVICE,
@@ -149,6 +150,7 @@ describe('AnnualFoldersService — single-evidence presign', () => {
         AnnualFoldersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        { provide: AuthorizationContextService, useValue: {} },
       ],
     }).compile();
 

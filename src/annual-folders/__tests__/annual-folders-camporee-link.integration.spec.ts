@@ -19,6 +19,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { Test } from '@nestjs/testing';
 import { AnnualFoldersService } from '../annual-folders.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 
@@ -378,6 +379,7 @@ describe('createFolderForEnrollment — links camporee via resolver (CAMP-1, T-3
         AnnualFoldersService,
         { provide: PrismaService, useValue: svcPrisma },
         { provide: FILE_STORAGE_SERVICE, useValue: { upload: jest.fn() } },
+        { provide: AuthorizationContextService, useValue: {} },
       ],
     }).compile();
 

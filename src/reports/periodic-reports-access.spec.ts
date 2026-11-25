@@ -16,7 +16,7 @@ import {
 
 const profile = (
   roles: string[],
-  opts: { club?: boolean; permissions?: string[] } = {},
+  opts: { club?: boolean; permissions?: string[]; division?: number } = {},
 ) =>
   ({
     authorization: {
@@ -39,7 +39,15 @@ const profile = (
       active_assignment: { assignment_id: opts.club ? 'a1' : null },
       effective: {
         permissions: opts.permissions ?? ['reports:read'],
-        scope: { global: { local_field: { id: 7 }, union: { id: 3 } } },
+        scope: {
+          global: {
+            local_field: { id: 7 },
+            union: { id: 3 },
+            ...(opts.division === undefined
+              ? {}
+              : { division: { id: opts.division } }),
+          },
+        },
       },
     },
   }) as any;
@@ -95,6 +103,47 @@ describe('periodic report visibility (coordinators are out)', () => {
     expect(
       resolvePeriodicReportVisibilityScopeForActor(profile([role]), {}),
     ).toMatchObject({ access });
+  });
+
+  it.each(['director-dia', 'assistant-dia'])(
+    '%s is scoped to its own division, with narrowing filters only',
+    (role) => {
+      const resolved = profile([role], { division: 5 });
+      expect(
+        resolvePeriodicReportVisibilityScopeForActor(resolved, {
+          divisionId: 99,
+          unionId: 8,
+          localFieldId: 9,
+        }),
+      ).toEqual({
+        access: 'division',
+        divisionId: 5,
+        unionId: 8,
+        localFieldId: 9,
+      });
+      expect(isCoordinatorOnlyForPeriodicReports(resolved)).toBe(false);
+      expect(canViewPeriodicReports(resolved)).toBe(true);
+    },
+  );
+
+  it('a division actor without a derivable division is ADMIN_USER_SCOPE_MISSING', () => {
+    expect(() =>
+      resolvePeriodicReportVisibilityScopeForActor(
+        profile(['director-dia']),
+        {},
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING }),
+    );
+  });
+
+  it('a coordinator that also holds a division role is not coordinator-only', () => {
+    const resolved = profile(['coordinator', 'director-dia'], { division: 5 });
+    expect(isCoordinatorOnlyForPeriodicReports(resolved)).toBe(false);
+    expect(resolvePeriodicReportVisibilityScopeForActor(resolved, {})).toEqual({
+      access: 'division',
+      divisionId: 5,
+    });
   });
 
   it('a club director with no coordinator role is unaffected', () => {

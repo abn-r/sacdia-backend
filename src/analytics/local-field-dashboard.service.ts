@@ -121,6 +121,22 @@ export class LocalFieldDashboardService {
       return requestedLocalFieldId;
     }
 
+    if (scope.access === 'division' && requestedLocalFieldId !== undefined) {
+      const field = await this.prisma.local_fields.findFirst({
+        where: {
+          local_field_id: requestedLocalFieldId,
+          unions: { division_id: scope.divisionId },
+        },
+        select: { local_field_id: true },
+      });
+
+      if (!field) {
+        throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+      }
+
+      return requestedLocalFieldId;
+    }
+
     throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
 

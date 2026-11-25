@@ -42,12 +42,14 @@ describe('MonthlyReportsService admin list authorization', () => {
 
   const resolvedAuth = ({
     roles,
+    divisionId,
     unionId,
     localFieldId,
     activeAssignmentRole,
     activeClubSectionId = 44,
   }: {
     roles: string[];
+    divisionId?: number;
     unionId?: number;
     localFieldId?: number;
     activeAssignmentRole?: string;
@@ -77,6 +79,9 @@ describe('MonthlyReportsService admin list authorization', () => {
       effective: {
         scope: {
           global: {
+            ...(divisionId === undefined
+              ? {}
+              : { division: { id: divisionId, name: 'DIA' } }),
             ...(unionId === undefined
               ? {}
               : { union: { id: unionId, name: 'Unión' } }),
@@ -137,6 +142,73 @@ describe('MonthlyReportsService admin list authorization', () => {
           },
         },
       },
+    });
+  });
+
+  it('forces division leadership to the actor division and only narrows with union and local-field filters', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['director-dia'], divisionId: 5 }),
+    );
+
+    await service.listForAdmin('director-dia-user', {
+      divisionId: 99,
+      unionId: 20,
+      localFieldId: 7,
+    });
+
+    expect(mockPrisma.monthly_reports.count).toHaveBeenCalledWith({
+      where: {
+        club_enrollment: {
+          club_section: {
+            clubs: {
+              local_field_id: 7,
+              local_fields: { union_id: 20, unions: { division_id: 5 } },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('lists only the own division for a division actor with no filters', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['assistant-dia'], divisionId: 5 }),
+    );
+
+    await service.listForAdmin('assistant-dia-user', { divisionId: 99 });
+
+    expect(mockPrisma.monthly_reports.count).toHaveBeenCalledWith({
+      where: {
+        club_enrollment: {
+          club_section: {
+            clubs: { local_fields: { unions: { division_id: 5 } } },
+          },
+        },
+      },
+    });
+  });
+
+  it('rejects a division actor without a derivable division', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['director-dia'] }),
+    );
+
+    await expect(
+      service.listForAdmin('director-dia-user', {}),
+    ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+
+    expect(mockPrisma.monthly_reports.count).not.toHaveBeenCalled();
+  });
+
+  it('keeps platform admins global even when they carry a division anchor', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['super-admin'], divisionId: 5 }),
+    );
+
+    await service.listForAdmin('super-admin-user', {});
+
+    expect(mockPrisma.monthly_reports.count).toHaveBeenCalledWith({
+      where: { club_enrollment: { club_section: {} } },
     });
   });
 

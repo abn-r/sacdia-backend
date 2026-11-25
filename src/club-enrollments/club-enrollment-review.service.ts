@@ -179,6 +179,20 @@ export class ClubEnrollmentReviewService {
     return { items, meta: { page, limit, total, counts } };
   }
 
+  /**
+   * Pending-validation enrollments the actor can review, current ecclesiastical
+   * year. Uses the same base where as `findQueue`, so count and queue agree.
+   */
+  async countPending(actorId: string): Promise<number> {
+    const channels = await this.resolveChannels(actorId);
+    const base = await this.queueBaseWhere(channels, {});
+    return this.prisma.club_enrollments.count({
+      where: {
+        AND: [base, { status: CLUB_ENROLLMENT_STATUS.PENDING_VALIDATION }],
+      },
+    });
+  }
+
   // ========================================
   // DECISIONS
   // ========================================

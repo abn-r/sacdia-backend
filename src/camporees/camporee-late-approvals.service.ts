@@ -5,6 +5,8 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
+import { CamporeesService } from './camporees.service';
 import {
   CamporeeLifecyclePolicy,
   type CamporeeLifecycleContext,
@@ -15,7 +17,46 @@ export class CamporeeLateApprovalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly camporeeLifecyclePolicy: CamporeeLifecyclePolicy,
+    private readonly camporeesService: CamporeesService,
   ) {}
+
+  /**
+   * Count pending union-camporee registrations (clubs + members + payments)
+   * across the active union camporees inside the actor's territory. Uses the
+   * same territorial filter as the union camporee listing and the same
+   * pending predicates as `listUnionPending`, so count and queue agree.
+   */
+  async countUnionPending(authorization: AuthorizationSnapshot) {
+    const camporeeScope = {
+      ...this.camporeesService.buildUnionCamporeeScopeWhere(authorization),
+      active: true,
+    };
+
+    const [clubs, members, payments] = await Promise.all([
+      this.prisma.camporee_clubs.count({
+        where: {
+          status: 'pending_approval',
+          active: true,
+          union_camporees: camporeeScope,
+        },
+      }),
+      this.prisma.camporee_members.count({
+        where: {
+          status: 'pending_approval',
+          active: true,
+          union_camporees: camporeeScope,
+        },
+      }),
+      this.prisma.camporee_payments.count({
+        where: {
+          status: 'pending_approval',
+          camporee_member: { union_camporees: camporeeScope },
+        },
+      }),
+    ]);
+
+    return clubs + members + payments;
+  }
 
   private async assertClubRegistrationOpenForPendingClub(
     record: { camporee_id: number | null; union_camporee_id: number | null },

@@ -3867,6 +3867,18 @@ export class CamporeesService {
     }
   }
 
+  /**
+   * Territorial recorte of the union-camporee listing, exposed so other
+   * services (pending counts) apply EXACTLY the same filter as `findAllUnion`.
+   */
+  buildUnionCamporeeScopeWhere(
+    authorization?: AuthorizationSnapshot,
+  ): Record<string, unknown> {
+    const where: Record<string, unknown> = {};
+    this.applyUnionCamporeeScope(where, authorization);
+    return where;
+  }
+
   private applyUnionCamporeeScope(
     where: Record<string, unknown>,
     authorization?: AuthorizationSnapshot,

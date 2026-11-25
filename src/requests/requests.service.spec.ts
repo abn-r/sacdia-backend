@@ -91,6 +91,7 @@ describe('RequestsService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
     },
     club_role_assignments: {
       findFirst: jest.fn(),
@@ -909,6 +910,67 @@ describe('RequestsService', () => {
       expect(lastWhere()).toEqual({
         OR: [{ from_section_id: 20 }, { to_section_id: 20 }],
       });
+    });
+  });
+
+  describe('countReviewable', () => {
+    beforeEach(() => {
+      prisma.club_transfer_requests.count.mockResolvedValue(3);
+      prisma.role_assignment_requests.count.mockResolvedValue(2);
+    });
+
+    it('counts pending requests of every section for a global scope', async () => {
+      actorSectionScope.resolve.mockResolvedValue({ all: true });
+
+      await expect(service.countReviewable('admin-1')).resolves.toEqual({
+        transfers: 3,
+        role_assignments: 2,
+      });
+
+      expect(actorSectionScope.resolve).toHaveBeenCalledWith('admin-1', {
+        club: 'requests:review',
+        global: 'requests:review',
+      });
+      expect(prisma.club_transfer_requests.count).toHaveBeenCalledWith({
+        where: { status: 'pending' },
+      });
+      expect(prisma.role_assignment_requests.count).toHaveBeenCalledWith({
+        where: { status: 'pending' },
+      });
+    });
+
+    it('limits transfers to the destination section and assignments to their section inside the territory', async () => {
+      const clubs = { union_id: 5 };
+      actorSectionScope.resolve.mockResolvedValue({
+        all: false,
+        sectionIds: [],
+        clubs,
+      });
+
+      await service.countReviewable('union-1');
+
+      const sectionWhere = { clubs: { is: clubs } };
+      expect(prisma.club_transfer_requests.count).toHaveBeenCalledWith({
+        where: { status: 'pending', to_section: sectionWhere },
+      });
+      expect(prisma.role_assignment_requests.count).toHaveBeenCalledWith({
+        where: { status: 'pending', club_section: sectionWhere },
+      });
+    });
+
+    it('returns zero without querying when the actor has no review scope', async () => {
+      actorSectionScope.resolve.mockResolvedValue({
+        all: false,
+        sectionIds: [],
+        clubs: null,
+      });
+
+      await expect(service.countReviewable('member-1')).resolves.toEqual({
+        transfers: 0,
+        role_assignments: 0,
+      });
+      expect(prisma.club_transfer_requests.count).not.toHaveBeenCalled();
+      expect(prisma.role_assignment_requests.count).not.toHaveBeenCalled();
     });
   });
 });

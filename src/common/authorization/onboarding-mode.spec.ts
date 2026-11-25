@@ -137,8 +137,11 @@ describe('computeOnboardingMode', () => {
     'assistant-union',
     'director-dia',
     'assistant-dia',
-  ])('S1.7 %s without a club -> panel_only', (role) => {
-    expect(computeOnboardingMode(resolvedFor([role]))).toBe('panel_only');
+  ])('S12.1 / S12.2 %s without a club -> club_exempt', (role) => {
+    expect(computeOnboardingMode(resolvedFor([role]))).toBe('club_exempt');
+    expect(computeOnboardingMode(resolvedFor(['user', role]))).toBe(
+      'club_exempt',
+    );
   });
 
   it('S1.8 union role with a pending club assignment -> club', () => {
@@ -157,10 +160,35 @@ describe('computeOnboardingMode', () => {
     expect(computeOnboardingMode(resolvedFor([]))).toBe('club');
   });
 
-  it('S1.10 / R1.7 pastor + union role with no club -> panel_only', () => {
+  it('S12.3 pastor + union / division role with no club -> club_exempt', () => {
     expect(
       computeOnboardingMode(resolvedFor(['pastor', 'director-union'])),
-    ).toBe('panel_only');
+    ).toBe('club_exempt');
+    expect(
+      computeOnboardingMode(resolvedFor(['pastor', 'assistant-dia'])),
+    ).toBe('club_exempt');
+  });
+
+  it.each([
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  ])('S12.4 %s with a visible club -> club', (role) => {
+    for (const status of ['active', 'pending', 'inactive', 'expired']) {
+      expect(computeOnboardingMode(resolvedFor([role], [{ status }]))).toBe(
+        'club',
+      );
+    }
+  });
+
+  it('S12.4 designated-only assignments never reach the grants -> club_exempt', () => {
+    expect(computeOnboardingMode(resolvedFor(['director-union'], []))).toBe(
+      'club_exempt',
+    );
+    expect(computeOnboardingMode(resolvedFor(['director-dia'], []))).toBe(
+      'club_exempt',
+    );
   });
 
   it('S1.13 a club_exempt account that gains a visible club -> club', () => {
@@ -169,11 +197,20 @@ describe('computeOnboardingMode', () => {
     ).toBe('club');
   });
 
-  it('S1.12 losing the surface role while keeping another global role -> panel_only; only user left -> club', () => {
+  it('S1.12 / S12.6 losing the surface role while keeping another non-user role -> panel_only; only user left -> club', () => {
+    // `club_enrollments`-style non-user role with no surface: none exists in
+    // the hub sets, so the generic rule is exercised with an unknown role.
+    expect(
+      computeOnboardingMode(resolvedFor(['some-panel-role', 'user'])),
+    ).toBe('panel_only');
     expect(computeOnboardingMode(resolvedFor(['director-union', 'user']))).toBe(
-      'panel_only',
+      'club_exempt',
     );
+    // Union role removed: previous result for what remains.
     expect(computeOnboardingMode(resolvedFor(['user']))).toBe('club');
+    expect(computeOnboardingMode(resolvedFor(['coordinator', 'user']))).toBe(
+      'club_exempt',
+    );
   });
 
   it('is derived from the fully resolved profile: the stripped profile would hide the club', () => {
