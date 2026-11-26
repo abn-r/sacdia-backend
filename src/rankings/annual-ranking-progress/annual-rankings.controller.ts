@@ -78,14 +78,20 @@ export class AnnualRankingsController {
 
   @Get('territory-summary')
   @RequirePermissions('rankings:read')
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [
+      { kind: 'union', source: 'query', field: 'union_id', optional: true },
+    ],
+  })
   @ApiOperation({
     summary: 'Annual progress summary per child territory',
     description:
-      'Pass exactly one of division_id (returns its unions) or union_id (returns its local fields). ' +
+      "With union_id: that union's local fields. Without it: the children of the caller's own unit " +
+      '(a Division actor gets its unions, a Union actor its local fields). ' +
       'Each row carries the active club count and whether an annual ranking config exists. ' +
-      'Division actors may query their own division (or a union in it); Union actors only their own union.',
+      "union_id is bound to the caller's territory (a Division actor may query a union in its division).",
   })
-  @ApiQuery({ name: 'division_id', required: false, type: Number })
   @ApiQuery({ name: 'union_id', required: false, type: Number })
   @ApiQuery({
     name: 'year_id',
@@ -101,7 +107,7 @@ export class AnnualRankingsController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Both or neither of division_id / union_id',
+    description: 'No union_id and the caller has no division or union scope',
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
@@ -109,8 +115,6 @@ export class AnnualRankingsController {
     description: 'Requested territory is outside the caller scope',
   })
   async territorySummaryList(
-    @Query('division_id', new ParseIntPipe({ optional: true }))
-    divisionId: number | undefined,
     @Query('union_id', new ParseIntPipe({ optional: true }))
     unionId: number | undefined,
     @Query('year_id', new ParseIntPipe({ optional: true }))
@@ -121,7 +125,7 @@ export class AnnualRankingsController {
     data: AnnualRankingTerritorySummaryRowDto[];
   }> {
     const data = await this.territorySummary.getSummary(
-      { divisionId, unionId, yearId },
+      { unionId, yearId },
       req.authorizationProfile ?? req.authorization,
     );
     return { status: 'success', data };

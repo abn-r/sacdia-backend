@@ -32,12 +32,26 @@ export class AnnualRankingTerritorySummaryService {
     query: TerritorySummaryQuery,
     profile?: ResolvedAuthorizationProfile,
   ): Promise<AnnualRankingTerritorySummaryRowDto[]> {
-    const { divisionId, unionId } = query;
+    const scope = resolveActorTerritoryScope(profile);
+    // Without union_id the parent is the actor's own unit: a division actor
+    // gets its unions, a union actor its local fields. The route never takes
+    // a division_id (no tenant binding exists for divisions), so a division
+    // is always the caller's own.
+    let { divisionId, unionId } = query;
+    if (divisionId === undefined && unionId === undefined) {
+      if (scope.level === 'division') divisionId = scope.divisionId;
+      else if (scope.level === 'union') unionId = scope.unionId;
+    }
     if ((divisionId === undefined) === (unionId === undefined)) {
+      if (scope.level === 'unconfigured') {
+        throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+      }
+      if (scope.level === 'local_field') {
+        throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+      }
       throw new AppBadRequestException(ErrorCode.ANNUAL_RANKING_SCOPE_INVALID);
     }
 
-    const scope = resolveActorTerritoryScope(profile);
     await this.assertInScope(scope, divisionId, unionId);
 
     const yearId = await this.resolveYearId(query.yearId);

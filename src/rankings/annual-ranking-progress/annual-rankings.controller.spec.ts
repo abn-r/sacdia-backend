@@ -71,13 +71,13 @@ describe('AnnualRankingsController', () => {
   });
 
   it('delegates territory summary and wraps the envelope', async () => {
-    const result = await controller.territorySummaryList(1, undefined, 2, {
+    const result = await controller.territorySummaryList(3, 2, {
       authorizationProfile,
     });
 
     expect(result).toEqual({ status: 'success', data: [] });
     expect(summary.getSummary).toHaveBeenCalledWith(
-      { divisionId: 1, unionId: undefined, yearId: 2 },
+      { unionId: 3, yearId: 2 },
       authorizationProfile,
     );
   });

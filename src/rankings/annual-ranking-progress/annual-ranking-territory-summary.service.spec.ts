@@ -123,7 +123,7 @@ describe('AnnualRankingTerritorySummaryService', () => {
     expect(rows.find((r) => r.id === 3)?.configured).toBe(false);
   });
 
-  it('400 when both or neither of division_id / union_id', async () => {
+  it('400 when both division and union are given', async () => {
     await expect(
       service.getSummary({ divisionId: 1, unionId: 3 }, divisionActor()),
     ).rejects.toMatchObject({
@@ -131,9 +131,24 @@ describe('AnnualRankingTerritorySummaryService', () => {
         code: ErrorCode.ANNUAL_RANKING_SCOPE_INVALID,
       }),
     });
-    await expect(service.getSummary({}, divisionActor())).rejects.toMatchObject(
-      { status: 400 },
-    );
+  });
+
+  it('without union_id a division actor gets its own unions', async () => {
+    const rows = await service.getSummary({}, divisionActor());
+
+    expect(rows.map((r) => r.id)).toEqual([3, 4]);
+    expect(prisma.unions.findMany).toHaveBeenCalled();
+  });
+
+  it('without union_id a union actor gets its own local fields', async () => {
+    prisma.local_fields.findMany.mockResolvedValue([
+      { local_field_id: 31, name: 'LF A', union_id: 3 },
+    ]);
+
+    const rows = await service.getSummary({}, unionActor(3));
+
+    expect(rows.map((r) => r.id)).toEqual([31]);
+    expect(prisma.unions.findMany).not.toHaveBeenCalled();
   });
 
   it('403 for a union actor reading another union or any division', async () => {
