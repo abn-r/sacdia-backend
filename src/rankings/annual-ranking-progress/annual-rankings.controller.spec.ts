@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualRankingsController } from './annual-rankings.controller';
 import { AnnualRankingsService } from './annual-rankings.service';
+import { AnnualRankingTerritorySummaryService } from './annual-ranking-territory-summary.service';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import type { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
 
@@ -20,6 +21,8 @@ describe('AnnualRankingsController', () => {
   let controller: AnnualRankingsController;
   let service: jest.Mocked<Pick<AnnualRankingsService, 'getLeaderboard'>>;
 
+  const summary = { getSummary: jest.fn().mockResolvedValue([]) };
+
   beforeEach(async () => {
     service = {
       getLeaderboard: jest.fn().mockResolvedValue({
@@ -30,7 +33,13 @@ describe('AnnualRankingsController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AnnualRankingsController],
-      providers: [{ provide: AnnualRankingsService, useValue: service }],
+      providers: [
+        { provide: AnnualRankingsService, useValue: service },
+        {
+          provide: AnnualRankingTerritorySummaryService,
+          useValue: { getSummary: summary.getSummary },
+        },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: jest.fn().mockReturnValue(true) })
@@ -57,6 +66,18 @@ describe('AnnualRankingsController', () => {
         yearId: 1,
         clubTypeId: 1,
       },
+      authorizationProfile,
+    );
+  });
+
+  it('delegates territory summary and wraps the envelope', async () => {
+    const result = await controller.territorySummaryList(1, undefined, 2, {
+      authorizationProfile,
+    });
+
+    expect(result).toEqual({ status: 'success', data: [] });
+    expect(summary.getSummary).toHaveBeenCalledWith(
+      { divisionId: 1, unionId: undefined, yearId: 2 },
       authorizationProfile,
     );
   });
