@@ -2573,7 +2573,6 @@ model users {
   activities                           activities[]
   activity_series                      activity_series[]
   attending_members_camporees          camporee_members[]
-  certification_module_progress          certification_module_progress[]
   certification_section_progress         certification_section_progress[]
   certification_section_progress_reviews certification_section_progress[]       @relation("certification_section_progress_reviewer")
   certification_versions_published       certification_versions[]               @relation("certification_versions_published_by")
@@ -2986,7 +2985,6 @@ model certifications {
   modified_at                    DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
   duration_hours                 Int?
   certification_versions         certification_versions[]
-  certification_module_progress  certification_module_progress[]
   certification_modules          certification_modules[]
   certification_section_progress certification_section_progress[]
   users_certifications           users_certifications[]
@@ -3126,23 +3124,6 @@ model users_certifications {
   @@index([user_id, completion_status], map: "idx_users_certifications_completion")
   @@index([status], map: "idx_users_certifications_status")
   @@index([certification_version_id], map: "idx_users_certifications_version")
-}
-
-model certification_module_progress {
-  progress_id      Int            @id @default(autoincrement())
-  user_id          String         @db.Uuid
-  certification_id Int
-  module_id        Int
-  score            Float
-  active           Boolean        @default(true)
-  created_at       DateTime       @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
-  completed        Boolean        @default(false)
-  completion_date  DateTime?      @db.Timestamptz(6)
-  certifications   certifications @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
-  users            users          @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([user_id, certification_id, module_id])
 }
 
 model certification_section_progress {

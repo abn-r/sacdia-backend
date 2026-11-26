@@ -77,8 +77,7 @@ type VersionModule = {
 /**
  * Progreso de una inscripción con versión: secciones requeridas aprobadas /
  * secciones requeridas de su versión. Un módulo está completo cuando todas sus
- * secciones requeridas están aprobadas. El booleano legado de
- * certification_module_progress ya no se escribe, así que no se usa.
+ * secciones requeridas están aprobadas.
  */
 function versionProgress(
   modules: VersionModule[],
