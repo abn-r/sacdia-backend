@@ -61,6 +61,7 @@ import {
 import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
 import { REVOKED_DEVICE_HISTORY_MS } from '../guardianships/guardianships.constants';
 import { GlobalRole, ClubRole } from '../common/authorization/roles';
+import { roleHolderAssignmentWhere } from '../rbac/role-holder-assignment';
 
 // ── Bulk upload types ────────────────────────────────────────────────────────
 export type BulkUserRowResult = {
@@ -164,8 +165,10 @@ const adminUserListSelect = Prisma.validator<Prisma.usersSelect>()({
     },
   },
   club_role_assignments: {
-    // Only effective assignments: a rejected membership request keeps
-    // active=true with status='rejected' (history), and must not read as a role.
+    // Role holders only, the same rule as the role usage count:
+    // adminUserListSelectAt sets the dated filter per request. A rejected
+    // membership request keeps active=true with status='rejected' (history)
+    // and must not read as a role.
     where: {
       active: true,
       status: 'active',
@@ -176,6 +179,7 @@ const adminUserListSelect = Prisma.validator<Prisma.usersSelect>()({
     },
     select: {
       assignment_id: true,
+      status: true,
       roles: {
         select: {
           role_name: true,
@@ -206,6 +210,26 @@ const adminUserListSelect = Prisma.validator<Prisma.usersSelect>()({
     },
   },
 });
+
+/**
+ * List select with the club assignments filtered the way the role usage count
+ * filters them: active or pending, not ended, not expired, at `now`.
+ */
+function adminUserListSelectAt(now: Date) {
+  return {
+    ...adminUserListSelect,
+    club_role_assignments: {
+      ...adminUserListSelect.club_role_assignments,
+      where: {
+        ...roleHolderAssignmentWhere(now),
+        roles: {
+          active: true,
+          role_category: role_category.CLUB,
+        },
+      },
+    },
+  } satisfies Prisma.usersSelect;
+}
 
 const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
   ...adminUserListSelect,
@@ -274,6 +298,7 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
     orderBy: { created_at: 'desc' },
     select: {
       assignment_id: true,
+      status: true,
       role_id: true,
       club_section_id: true,
       ecclesiastical_year_id: true,
@@ -457,6 +482,8 @@ interface AdminUserListItem {
   club_assignments: Array<{
     assignment_id: string;
     role_name: string;
+    /** `active`, or `pending` while the assignment awaits approval. */
+    status: string;
     section_name: string | null;
     club_name: string | null;
   }>;
@@ -580,6 +607,7 @@ interface AdminUserDetail extends AdminUserListItem {
   club_assignments: Array<{
     assignment_id: string;
     role_name: string;
+    status: string;
     club_name: string | null;
     section_name: string | null;
     district_id: number | null;
@@ -640,7 +668,8 @@ export class AdminUsersService {
     pagination.page = query.page ?? 1;
     pagination.limit = query.limit ?? 20;
 
-    const where = await this.buildListWhere(scope, query);
+    const now = new Date();
+    const where = await this.buildListWhere(scope, query, now);
     const orderBy = this.buildListOrderBy(query);
 
     const [users, total] = await Promise.all([
@@ -649,7 +678,7 @@ export class AdminUsersService {
         orderBy,
         skip: pagination.skip,
         take: pagination.take,
-        select: adminUserListSelect,
+        select: adminUserListSelectAt(now),
       }),
       this.prisma.users.count({ where }),
     ]);
@@ -763,6 +792,7 @@ export class AdminUsersService {
       club_assignments: user.club_role_assignments.map((assignment) => ({
         assignment_id: assignment.assignment_id,
         role_name: assignment.roles.role_name,
+        status: assignment.status ?? 'active',
         club_name: assignment.club_sections?.clubs?.name ?? null,
         section_name: assignment.club_sections?.club_types?.name ?? null,
         district_id:
@@ -1674,6 +1704,7 @@ export class AdminUsersService {
   private async buildListWhere(
     scope: ActorScope,
     query: AdminListUsersQueryDto,
+    now: Date = new Date(),
   ): Promise<Prisma.usersWhereInput> {
     const filters: Prisma.usersWhereInput[] = [];
     const scopedFilter = await this.buildScopeWhere(scope);
@@ -1721,8 +1752,7 @@ export class AdminUsersService {
           {
             club_role_assignments: {
               some: {
-                active: true,
-                status: 'active',
+                ...roleHolderAssignmentWhere(now),
                 roles: {
                   active: true,
                   role_category: role_category.CLUB,
@@ -1936,6 +1966,7 @@ export class AdminUsersService {
       .map((assignment) => ({
         assignment_id: assignment.assignment_id,
         role_name: assignment.roles.role_name,
+        status: assignment.status ?? 'active',
         section_name: assignment.club_sections?.club_types?.name ?? null,
         club_name: assignment.club_sections?.clubs?.name ?? null,
       }))

@@ -17,6 +17,7 @@ import { BetterAuthService } from '../better-auth/better-auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListUsersQueryDto, CreateAdminUserDto } from './dto';
 import { AdminUsersService } from './admin-users.service';
+import { roleHolderAssignmentWhere } from '../rbac/role-holder-assignment';
 
 describe('AdminUsersService', () => {
   let service: AdminUsersService;
@@ -476,6 +477,7 @@ describe('AdminUsersService', () => {
           club_role_assignments: [
             {
               assignment_id: 'cra-director',
+              status: 'active',
               roles: { role_name: 'director' },
               club_sections: {
                 club_types: { name: 'Aventureros' },
@@ -484,6 +486,7 @@ describe('AdminUsersService', () => {
             },
             {
               assignment_id: 'cra-member',
+              status: 'pending',
               roles: { role_name: 'member' },
               club_sections: {
                 club_types: { name: 'Guías Mayores' },
@@ -492,6 +495,7 @@ describe('AdminUsersService', () => {
             },
             {
               assignment_id: 'cra-secretary',
+              status: null,
               roles: { role_name: 'secretary' },
               club_sections: {
                 club_types: { name: 'Conquistadores' },
@@ -516,18 +520,21 @@ describe('AdminUsersService', () => {
         {
           assignment_id: 'cra-director',
           role_name: 'director',
+          status: 'active',
           section_name: 'Aventureros',
           club_name: 'ACV',
         },
         {
           assignment_id: 'cra-secretary',
           role_name: 'secretary',
+          status: 'active',
           section_name: 'Conquistadores',
           club_name: 'ACV',
         },
         {
           assignment_id: 'cra-member',
           role_name: 'member',
+          status: 'pending',
           section_name: 'Guías Mayores',
           club_name: 'ACV',
         },
@@ -864,7 +871,7 @@ describe('AdminUsersService', () => {
     });
   });
 
-  describe('current club assignments exclude non-effective statuses', () => {
+  describe('club assignments in the users list follow the role holder rule', () => {
     const superAdmin = () =>
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization({
@@ -873,7 +880,18 @@ describe('AdminUsersService', () => {
         }),
       );
 
-    it('listUsers selects only status=active club assignments (rejected requests keep active=true)', async () => {
+    const holderWhere = expect.objectContaining({
+      active: true,
+      status: { in: ['active', 'pending'] },
+      AND: [
+        { OR: [{ end_date: null }, { end_date: { gte: expect.any(Date) } }] },
+        {
+          OR: [{ expires_at: null }, { expires_at: { gt: expect.any(Date) } }],
+        },
+      ],
+    });
+
+    it('listUsers selects active and pending club assignments that have not ended or expired (rejected ones stay out)', async () => {
       superAdmin();
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
@@ -881,9 +899,8 @@ describe('AdminUsersService', () => {
       await service.listUsers('actor-super', buildListQuery());
 
       const { select } = mockPrismaService.users.findMany.mock.calls[0][0];
-      expect(select.club_role_assignments.where).toEqual(
-        expect.objectContaining({ active: true, status: 'active' }),
-      );
+      expect(select.club_role_assignments.where).toEqual(holderWhere);
+      expect(select.club_role_assignments.select.status).toBe(true);
     });
 
     it('getUserById selects only status=active club assignments', async () => {
@@ -901,7 +918,7 @@ describe('AdminUsersService', () => {
       });
     });
 
-    it('the club role filter only matches status=active assignments', async () => {
+    it('the club role filter uses the same holder rule as the role usage count', async () => {
       superAdmin();
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
@@ -915,8 +932,12 @@ describe('AdminUsersService', () => {
       const clubClause = where.OR.find(
         (c: Record<string, unknown>) => 'club_role_assignments' in c,
       );
+      expect(clubClause.club_role_assignments.some).toEqual(holderWhere);
       expect(clubClause.club_role_assignments.some).toEqual(
-        expect.objectContaining({ active: true, status: 'active' }),
+        expect.objectContaining({
+          ...roleHolderAssignmentWhere(),
+          AND: expect.any(Array),
+        }),
       );
     });
   });

@@ -15,6 +15,7 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 import { maskEmail } from '../common/utils/mask-email.util';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { GlobalRole } from '../common/authorization/roles';
+import { roleHolderAssignmentWhere } from './role-holder-assignment';
 
 type AssignRolePermissionOptions = {
   invalidateAffectedUsers?: boolean;
@@ -326,8 +327,6 @@ export class RbacService {
    * sin efecto.
    */
   private async countActiveRoleAssignments(roleId: string): Promise<number> {
-    const now = new Date();
-    const today = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
     const [globalHolders, clubHolders] = await Promise.all([
       this.prisma.users_roles.findMany({
         where: { role_id: roleId, active: true },
@@ -335,15 +334,7 @@ export class RbacService {
         distinct: ['user_id'],
       }),
       this.prisma.club_role_assignments.findMany({
-        where: {
-          role_id: roleId,
-          active: true,
-          status: { in: ['active', 'pending'] },
-          AND: [
-            { OR: [{ end_date: null }, { end_date: { gte: today } }] },
-            { OR: [{ expires_at: null }, { expires_at: { gt: now } }] },
-          ],
-        },
+        where: { role_id: roleId, ...roleHolderAssignmentWhere() },
         select: { user_id: true },
         distinct: ['user_id'],
       }),
