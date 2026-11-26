@@ -20,6 +20,7 @@ import { ErrorCode } from '../errors/error-codes';
 import {
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { R2FileStorageService } from './r2-file-storage.service';
@@ -755,6 +756,46 @@ describe('R2FileStorageService', () => {
           Range: 'bytes=0-63',
         }),
       );
+    });
+  });
+  describe('listObjects', () => {
+    it('lists every page under the prefix as full object keys', async () => {
+      const modified = new Date('2026-11-20T10:00:00.000Z');
+      mockS3Send
+        .mockResolvedValueOnce({
+          Contents: [
+            {
+              Key: 'honors/admin-uploads/a.png',
+              LastModified: modified,
+              Size: 10,
+            },
+            { Size: 3 },
+          ],
+          IsTruncated: true,
+          NextContinuationToken: 'page-2',
+        })
+        .mockResolvedValueOnce({
+          Contents: [{ Key: 'honors/admin-uploads/b.png' }],
+          IsTruncated: false,
+        });
+
+      const objects = await service.listObjects(
+        StorageBucketAlias.HONORS_IMAGES,
+        'admin-uploads/',
+      );
+
+      expect(objects).toEqual([
+        { key: 'honors/admin-uploads/a.png', lastModified: modified, size: 10 },
+        { key: 'honors/admin-uploads/b.png', lastModified: null, size: 0 },
+      ]);
+      const [first, second] = mockS3Send.mock.calls.map(([command]) => command);
+      expect(first).toBeInstanceOf(ListObjectsV2Command);
+      expect(first.input).toEqual({
+        Bucket: 'sacdia-honors',
+        Prefix: 'honors/admin-uploads/',
+        ContinuationToken: undefined,
+      });
+      expect(second.input.ContinuationToken).toBe('page-2');
     });
   });
 });

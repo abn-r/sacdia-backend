@@ -29,6 +29,7 @@
     "authz:generate": "tsx scripts/authz/generate-catalog.ts",
     "authz:check": "tsx scripts/authz/generate-catalog.ts --check",
     "load-test": "node scripts/load-test.js",
+    "cleanup:honor-assets": "tsx scripts/cleanup-orphan-honor-assets.ts",
     "verify:fcm-migration": "npx tsx scripts/verify-fcm-migration.ts",
     "verify:iana-timezones": "bash scripts/verify-iana-timezone-release.sh",
     "verify:institutional-hierarchy-migration": "tsx scripts/verify-institutional-hierarchy-migration.ts",

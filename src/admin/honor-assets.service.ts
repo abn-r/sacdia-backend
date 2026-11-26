@@ -9,6 +9,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { HONOR_ASSET_UPLOAD_PREFIX } from './honor-asset-orphans';
 
 export const HONOR_ASSET_KINDS = ['image', 'material'] as const;
 export type HonorAssetKind = (typeof HONOR_ASSET_KINDS)[number];
@@ -73,7 +74,7 @@ export class HonorAssetsService {
     }
 
     // Relative to the bucket: the storage adds the bucket's key prefix.
-    const key = `admin-uploads/${randomUUID()}.${ext}`;
+    const key = `${HONOR_ASSET_UPLOAD_PREFIX}${randomUUID()}.${ext}`;
     const { url } = await this.fileStorage.upload(
       rule.bucket,
       key,
