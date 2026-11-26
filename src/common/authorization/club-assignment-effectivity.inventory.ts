@@ -24,7 +24,7 @@ const baseline = {
     'effectiveWhere|T09|2|2948ae2063cb',
   'activities/activities.service.ts': 'effectiveWhere|T09|4|01e15b0aca14',
   'admin/admin-reference.service.ts': 'effectiveWhere|T09|1|f9e0a7b798f8',
-  'admin/admin-users.service.ts': 'effectiveWhere|T09|4|6dc79160e792',
+  'admin/admin-users.service.ts': 'effectiveWhere|T09|5|a9fbcc89fa75',
   'analytics/analytics.service.ts': 'effectiveWhere|T09|9|01ab8142bda8',
   'analytics/operations-dashboard.repository.ts':
     'effectiveWhere|T09|5|b1e4bbcd3060',
@@ -126,7 +126,8 @@ const baseline = {
   'qr/qr.service.ts': 'effectiveWhere|T08|3|fb413b5f37eb',
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
     'effectiveWhere|T08|1|11a310c43604',
-  'rbac/rbac.service.ts': 'effectiveWhere|T08|2|555e1c82d735',
+  'rbac/rbac.service.ts': 'effectiveWhere|T08|2|0e09271f4a4c',
+  'rbac/role-holder-assignment.ts': 'workflowWhere|allowlist|1|f807e02d5855',
   'requests/requests.service.ts': 'effectiveWhere|T08|9|dfcece1b51a2',
   'scoring-categories/scoring-categories.service.ts':
     'effectiveWhere|T09|2|13fb6223b7d5',

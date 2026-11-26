@@ -85,6 +85,43 @@ export class R2FileStorageService implements FileStorageService {
     };
   }
 
+  /**
+   * Lists every object under `relativePrefix` (relative to the bucket's key
+   * prefix). Returned keys are full object keys, ready for `deleteMany`. Only
+   * for maintenance scripts; not part of FileStorageService.
+   */
+  async listObjects(
+    bucketAlias: StorageBucketAlias,
+    relativePrefix: string,
+  ): Promise<{ key: string; lastModified: Date | null; size: number }[]> {
+    const config = this.getBucketConfig(bucketAlias);
+    const prefix = this.toObjectKey(config.keyPrefix, relativePrefix);
+    const objects: { key: string; lastModified: Date | null; size: number }[] =
+      [];
+    let continuationToken: string | undefined;
+    do {
+      const response = await this.getClient().send(
+        new (loadS3().ListObjectsV2Command)({
+          Bucket: config.bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+      for (const item of response.Contents ?? []) {
+        if (!item.Key) continue;
+        objects.push({
+          key: item.Key,
+          lastModified: item.LastModified ?? null,
+          size: item.Size ?? 0,
+        });
+      }
+      continuationToken = response.IsTruncated
+        ? response.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
+    return objects;
+  }
+
   async deleteMany(
     bucketAlias: StorageBucketAlias,
     keys: string[],
