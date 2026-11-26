@@ -12,6 +12,19 @@ import {
   type ActorTerritoryScope,
 } from '../../common/authorization/actor-territory-scope';
 import type { AnnualRankingTerritorySummaryRowDto } from './dto/annual-ranking-territory-summary-response.dto';
+import {
+  RankingTierCalculatorService,
+  type RankingTierInput,
+} from './services/ranking-tier-calculator.service';
+
+/** Tier whose lower bound defines "Oro o superior" in supervision counts. */
+const GOLD_TIER_SLUG = 'oro';
+
+interface ProgressSnapshotSummary {
+  /** Clubs with at least one section at gold or better, per child. Null when not countable. */
+  goldClubsByChild: Map<number, Set<number>> | null;
+  oldestCalculatedAtByChild: Map<number, Date>;
+}
 
 export interface TerritorySummaryQuery {
   divisionId?: number;
@@ -21,12 +34,16 @@ export interface TerritorySummaryQuery {
 
 /**
  * Per-child counts for the supervision "Progreso anual" drill-down
- * (División -> Uniones, Unión -> Campos Locales). No scoring: only grouped
- * reads of children, clubs and annual ranking configs.
+ * (División -> Uniones, Unión -> Campos Locales). No live scoring: grouped
+ * reads of children, clubs, annual ranking configs and the nightly
+ * annual-progress snapshots.
  */
 @Injectable()
 export class AnnualRankingTerritorySummaryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tierCalculator: RankingTierCalculatorService,
+  ) {}
 
   async getSummary(
     query: TerritorySummaryQuery,
@@ -159,12 +176,19 @@ export class AnnualRankingTerritorySummaryService {
     const rows = new Map<number, AnnualRankingTerritorySummaryRowDto>(
       children.map((c) => [
         c.id,
-        { id: c.id, name: c.name, clubs_count: 0, configured: false },
+        {
+          id: c.id,
+          name: c.name,
+          clubs_count: 0,
+          configured: false,
+          gold_or_better_count: null,
+          progress_calculated_at: null,
+        },
       ]),
     );
     if (localFieldIds.length === 0) return [...rows.values()];
 
-    const [configs, sections] = await Promise.all([
+    const [configs, sections, progress] = await Promise.all([
       this.prisma.annual_ranking_configs.findMany({
         where: {
           active: true,
@@ -183,6 +207,7 @@ export class AnnualRankingTerritorySummaryService {
         },
         select: { clubs: { select: { club_id: true, local_field_id: true } } },
       }),
+      this.summarizeProgressSnapshots(yearId, localFieldIds, childOfLocalField),
     ]);
 
     // A union-level config is inherited by every local field of that union.
@@ -209,8 +234,94 @@ export class AnnualRankingTerritorySummaryService {
     }
     for (const [childId, row] of rows) {
       row.clubs_count = clubsByChild.get(childId)?.size ?? 0;
+      row.gold_or_better_count = progress.goldClubsByChild
+        ? (progress.goldClubsByChild.get(childId)?.size ?? 0)
+        : null;
+      row.progress_calculated_at =
+        progress.oldestCalculatedAtByChild.get(childId)?.toISOString() ?? null;
     }
 
     return [...rows.values()];
+  }
+
+  /**
+   * Gold counts come from the nightly snapshots compared against the live
+   * tier bands. They stay null (unknown, not zero) when the snapshot job has
+   * not produced any row for the year yet or the gold tier is not active.
+   */
+  private async summarizeProgressSnapshots(
+    yearId: number,
+    localFieldIds: number[],
+    childOfLocalField: Map<number, number>,
+  ): Promise<ProgressSnapshotSummary> {
+    const [anySnapshot, snapshots, tierRows] = await Promise.all([
+      this.prisma.annual_ranking_progress_snapshots.findFirst({
+        where: { ecclesiastical_year_id: yearId },
+        select: { club_enrollment_id: true },
+      }),
+      this.prisma.annual_ranking_progress_snapshots.findMany({
+        where: {
+          ecclesiastical_year_id: yearId,
+          local_field_id: { in: localFieldIds },
+        },
+        select: {
+          club_id: true,
+          local_field_id: true,
+          current_points: true,
+          max_points: true,
+          calculated_at: true,
+        },
+      }),
+      this.prisma.ranking_tiers.findMany({
+        where: { active: true },
+        orderBy: [{ sort_order: 'asc' }],
+      }),
+    ]);
+
+    const tiers: RankingTierInput[] = tierRows.map((row) => ({
+      name: row.name,
+      slug: row.slug,
+      bandPercentage: Number(row.band_percentage),
+      order: row.sort_order,
+    }));
+    const countable =
+      anySnapshot !== null && tiers.some((t) => t.slug === GOLD_TIER_SLUG);
+
+    const goldClubsByChild = new Map<number, Set<number>>();
+    const oldestCalculatedAtByChild = new Map<number, Date>();
+    const goldFromPointsByMax = new Map<number, number | null>();
+
+    for (const snapshot of snapshots) {
+      const childId = childOfLocalField.get(snapshot.local_field_id);
+      if (childId === undefined) continue;
+
+      const oldest = oldestCalculatedAtByChild.get(childId);
+      if (!oldest || snapshot.calculated_at < oldest) {
+        oldestCalculatedAtByChild.set(childId, snapshot.calculated_at);
+      }
+
+      if (!countable || snapshot.max_points <= 0) continue;
+
+      let goldFrom = goldFromPointsByMax.get(snapshot.max_points);
+      if (goldFrom === undefined) {
+        goldFrom =
+          this.tierCalculator
+            .deriveRanges({ maxPoints: snapshot.max_points, tiers })
+            .find((range) => range.slug === GOLD_TIER_SLUG)?.fromPoints ?? null;
+        goldFromPointsByMax.set(snapshot.max_points, goldFrom);
+      }
+
+      if (goldFrom !== null && snapshot.current_points >= goldFrom) {
+        if (!goldClubsByChild.has(childId)) {
+          goldClubsByChild.set(childId, new Set());
+        }
+        goldClubsByChild.get(childId)?.add(snapshot.club_id);
+      }
+    }
+
+    return {
+      goldClubsByChild: countable ? goldClubsByChild : null,
+      oldestCalculatedAtByChild,
+    };
   }
 }

@@ -9,6 +9,10 @@ import { FinancePeriodService } from '../finances/finance-period.service';
 import { FinanceReminderService } from '../finances/finance-reminder.service';
 import { RankingsService } from '../annual-folders/rankings.service';
 import { DataExportService } from '../data-export/data-export.service';
+import {
+  AnnualRankingProgressSnapshotService,
+  type ProgressSnapshotRefreshResult,
+} from '../rankings/annual-ranking-progress/services/annual-ranking-progress-snapshot.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
 import { runWithManualTriggerFromPayload } from '../common/services/cron-run-context';
 import { AppException } from '../common/errors/app.exception';
@@ -47,6 +51,7 @@ export class BackgroundJobsProcessor
     private readonly rankingsService: RankingsService,
     private readonly dataExportService: DataExportService,
     private readonly cronLogger: CronRunLogger,
+    private readonly progressSnapshot: AnnualRankingProgressSnapshotService,
   ) {
     super();
   }
@@ -154,7 +159,14 @@ export class BackgroundJobsProcessor
                 this.logger.log(
                   `Club + member rankings recalculated for year=${data.yearId ?? 'active'} mode=${data.mode ?? 'full'}`,
                 );
-                return { itemsProcessed: 0, includeMemberRankings: true };
+                const progressSnapshot = await this.refreshProgressSnapshot(
+                  data.yearId,
+                );
+                return {
+                  itemsProcessed: 0,
+                  includeMemberRankings: true,
+                  progressSnapshot,
+                };
               }
               const result = await this.rankingsService.recalculateRankings(
                 data.yearId,
@@ -162,7 +174,10 @@ export class BackgroundJobsProcessor
               this.logger.log(
                 `Rankings recalculated: ${result.updated} records`,
               );
-              return { itemsProcessed: result.updated };
+              const progressSnapshot = await this.refreshProgressSnapshot(
+                data.yearId,
+              );
+              return { itemsProcessed: result.updated, progressSnapshot };
             },
             { bull_job_id: job.id, triggered_at: data.triggeredAt },
           ),
@@ -180,6 +195,24 @@ export class BackgroundJobsProcessor
         const _exhaustive: never = name;
         throw new Error(`Unknown background job name: ${String(_exhaustive)}`);
       }
+    }
+  }
+
+  /**
+   * Annual-progress snapshot step. Runs after the club step and swallows its
+   * own errors: a snapshot failure must never fail (and retry) the club job.
+   */
+  private async refreshProgressSnapshot(
+    yearId?: number,
+  ): Promise<ProgressSnapshotRefreshResult | null> {
+    try {
+      return await this.progressSnapshot.refreshYear(yearId);
+    } catch (error) {
+      this.logger.error(
+        `Annual-progress snapshot refresh failed: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+      return null;
     }
   }
 

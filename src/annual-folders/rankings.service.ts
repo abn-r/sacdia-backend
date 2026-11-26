@@ -27,6 +27,14 @@ import { MemberCompositeScoreService } from '../rankings/member-rankings/service
 import { SectionAggregationService } from '../rankings/section-rankings/services/section-aggregation.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import {
+  RANKING_RECALCULATION_DISABLED_VALUE,
+  RANKING_RECALCULATION_ENABLED_CONFIG_KEY,
+} from '../rankings/ranking-recalculation-kill-switch';
+import {
+  AnnualRankingProgressSnapshotService,
+  type ProgressSnapshotRefreshResult,
+} from '../rankings/annual-ranking-progress/services/annual-ranking-progress-snapshot.service';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific
@@ -40,8 +48,8 @@ import { InstitutionalHierarchyService } from '../common/services/institutional-
  */
 export const GENERAL_CATEGORY_ID = '00000000-0000-0000-0000-000000000000';
 
-const SYSTEM_CONFIG_RECALC_ENABLED = 'ranking.recalculation_enabled';
-const KILL_SWITCH_VALUE_FALSE = 'false';
+const SYSTEM_CONFIG_RECALC_ENABLED = RANKING_RECALCULATION_ENABLED_CONFIG_KEY;
+const KILL_SWITCH_VALUE_FALSE = RANKING_RECALCULATION_DISABLED_VALUE;
 
 export interface RankingEntry {
   rank_position: number | null;
@@ -139,6 +147,7 @@ export class RankingsService {
     private readonly sectionAggregation: SectionAggregationService,
     private readonly systemConfig: SystemConfigService,
     private readonly hierarchy: InstitutionalHierarchyService,
+    private readonly progressSnapshot: AnnualRankingProgressSnapshotService,
   ) {}
 
   // ========================================
@@ -168,7 +177,8 @@ export class RankingsService {
       await this.cronLogger.track('rankings-recalculate', async () => {
         const result = await this.recalculateRankings();
         this.logger.log(`Rankings recalculated: ${result.updated} records`);
-        return { itemsProcessed: result.updated };
+        const progressSnapshot = await this.refreshProgressSnapshotSafely();
+        return { itemsProcessed: result.updated, progressSnapshot };
       });
     }
   }
@@ -200,10 +210,12 @@ export class RankingsService {
 
     if (options.includeMemberRankings) {
       await this.recalculateAll(year.year_id, options.mode ?? 'full');
+      await this.refreshProgressSnapshotSafely(year.year_id);
       return { queued: false, ecclesiastical_year_id: year.year_id };
     }
 
     const result = await this.recalculateRankings(year.year_id);
+    await this.refreshProgressSnapshotSafely(year.year_id);
     return {
       queued: false,
       ecclesiastical_year_id: year.year_id,
@@ -211,6 +223,25 @@ export class RankingsService {
       reason: result.reason,
       rankings_updated: result.updated,
     };
+  }
+
+  /**
+   * Annual-progress snapshot step for the no-Redis inline paths. Mirrors the
+   * BullMQ processor: a snapshot failure is logged and never fails the club
+   * rankings run.
+   */
+  private async refreshProgressSnapshotSafely(
+    yearId?: number,
+  ): Promise<ProgressSnapshotRefreshResult | null> {
+    try {
+      return await this.progressSnapshot.refreshYear(yearId);
+    } catch (error) {
+      this.logger.error(
+        `Annual-progress snapshot refresh failed: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+      return null;
+    }
   }
 
   private async addRankingsRecalculateJob(payload: RankingsRecalculatePayload) {

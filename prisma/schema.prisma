@@ -784,6 +784,7 @@ model club_types {
   resources                  resources[]
   award_categories           award_categories[]
   annual_ranking_configs     annual_ranking_configs[]
+  annual_ranking_progress_snapshots annual_ranking_progress_snapshots[]
   club_annual_rankings       club_annual_rankings[]
   achievements               achievements[]
   ranking_weight_configs     ranking_weight_configs?
@@ -830,6 +831,7 @@ model clubs {
   activity_series            activity_series[]
   club_year_transitions      club_year_transitions[]
   guardianships_custodian    guardianships[]              @relation("guardianships_custodian")
+  annual_ranking_progress_snapshots annual_ranking_progress_snapshots[]
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
   @@index([church_id], map: "idx_clubs_church_id")
@@ -884,6 +886,7 @@ model club_sections {
   guardianship_link_codes     guardianship_link_codes[]
   camporee_score_judge_assignments camporee_event_judge_assignments[]
   camporee_score_submissions       camporee_event_score_submissions[]
+  annual_ranking_progress_snapshots annual_ranking_progress_snapshots[]
   camporee_score_section_results   camporee_event_section_results[]
   camporee_schedule_block_assignments camporee_event_schedule_block_assignments[]
   insurance_purchases                 insurance_purchases[]       @relation("insurance_purchase_purchasing_section")
@@ -1214,6 +1217,7 @@ model ecclesiastical_years {
   club_enrollments            club_enrollments[]
   folder_templates            folder_templates[]
   club_annual_rankings        club_annual_rankings[]
+  annual_ranking_progress_snapshots annual_ranking_progress_snapshots[]
   annual_ranking_configs      annual_ranking_configs[]
   user_achievements           user_achievements[]
   annual_reports              annual_reports[]
@@ -1870,6 +1874,7 @@ model local_fields {
   institutional_name_versions     institutional_name_versions[]     @relation("institutional_name_versions_local_field")
   institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_local_field")
   annual_ranking_configs          annual_ranking_configs[]
+  annual_ranking_progress_snapshots annual_ranking_progress_snapshots[]
   union_camporee_local_fields     union_camporee_local_fields[]
   users                           users[]
   director_succession_plans       director_succession_plans[]
@@ -4183,6 +4188,7 @@ model club_enrollments {
   annual_folder        annual_folders?
   monthly_reports      monthly_reports[]
   club_annual_rankings club_annual_rankings[]
+  annual_ranking_progress_snapshot annual_ranking_progress_snapshots?
 
   @@unique([club_section_id, ecclesiastical_year_id])
   @@index([club_section_id], map: "idx_club_enrollments_club_section")
@@ -4488,6 +4494,7 @@ model annual_ranking_configs {
   club_type           club_types                         @relation(fields: [club_type_id], references: [club_type_id], onDelete: Restrict, onUpdate: NoAction)
   axes                annual_ranking_axis_configs[]
   components          annual_ranking_component_configs[]
+  progress_snapshots  annual_ranking_progress_snapshots[]
 
   // Scope uniqueness and exactly-one scope are enforced in SQL because Prisma
   // cannot model partial unique indexes.
@@ -4540,6 +4547,32 @@ model annual_ranking_component_configs {
   @@index([active, sort_order], map: "idx_annual_ranking_component_configs_active_order")
   @@index([annual_ranking_axis_config_id], map: "idx_annual_ranking_component_configs_axis_id")
   @@map("annual_ranking_component_configs")
+}
+
+// Nightly snapshot of each club section's live annual-progress points, used by
+// territory supervision views. Derived data: refreshed by the rankings job.
+model annual_ranking_progress_snapshots {
+  club_enrollment_id       String   @id @db.Uuid
+  ecclesiastical_year_id   Int
+  club_section_id          Int
+  club_id                  Int
+  club_type_id             Int
+  local_field_id           Int
+  annual_ranking_config_id String?  @db.Uuid
+  current_points           Int
+  max_points               Int
+  calculated_at            DateTime @default(now()) @db.Timestamptz(6)
+
+  club_enrollment       club_enrollments        @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: Cascade, onUpdate: NoAction)
+  ecclesiastical_year   ecclesiastical_years    @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Cascade, onUpdate: NoAction)
+  club_section          club_sections           @relation(fields: [club_section_id], references: [club_section_id], onDelete: Cascade, onUpdate: NoAction)
+  club                  clubs                   @relation(fields: [club_id], references: [club_id], onDelete: Cascade, onUpdate: NoAction)
+  club_type             club_types              @relation(fields: [club_type_id], references: [club_type_id], onDelete: Cascade, onUpdate: NoAction)
+  local_field           local_fields            @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+  annual_ranking_config annual_ranking_configs? @relation(fields: [annual_ranking_config_id], references: [annual_ranking_config_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([ecclesiastical_year_id, local_field_id], map: "idx_annual_ranking_progress_snapshots_year_local_field")
+  @@map("annual_ranking_progress_snapshots")
 }
 
 model club_annual_rankings {

@@ -10,6 +10,8 @@ import { RankingTiersController } from './ranking-tiers.controller';
 import { RankingTiersService } from './ranking-tiers.service';
 import { RankingTierCalculatorService } from './services/ranking-tier-calculator.service';
 import { AnnualRankingScoreRegistryService } from './services/annual-ranking-score-registry.service';
+import { AnnualRankingPointsService } from './services/annual-ranking-points.service';
+import { AnnualRankingProgressSnapshotService } from './services/annual-ranking-progress-snapshot.service';
 import { FolderScoreService } from '../../annual-folders/score-calculators/folder-score';
 import { FinanceScoreService } from '../../annual-folders/score-calculators/finance-score';
 import { CamporeeScoreService } from '../../annual-folders/score-calculators/camporee-score';
@@ -42,6 +44,8 @@ import { SacdiaOperationalUsageScoreService } from '../../annual-folders/score-c
     RankingTiersService,
     RankingTierCalculatorService,
     AnnualRankingScoreRegistryService,
+    AnnualRankingPointsService,
+    AnnualRankingProgressSnapshotService,
     FolderScoreService,
     FinanceScoreService,
     CamporeeScoreService,
@@ -58,6 +62,7 @@ import { SacdiaOperationalUsageScoreService } from '../../annual-folders/score-c
     AnnualRankingConfigService,
     RankingTiersService,
     AnnualRankingScoreRegistryService,
+    AnnualRankingProgressSnapshotService,
   ],
 })
 export class AnnualRankingProgressModule {}

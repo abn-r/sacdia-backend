@@ -66,6 +66,7 @@ describe('BackgroundJobsProcessor — data-export', () => {
       module.get(RankingsService),
       module.get(DataExportService),
       module.get(CronRunLogger),
+      { refreshYear: jest.fn() } as never,
     );
 
     Object.defineProperty(processor, 'worker', {

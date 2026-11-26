@@ -16,6 +16,7 @@ describe('BackgroundJobsProcessor — finance reminder', () => {
       {} as never,
       {} as never,
       {} as never,
+      { refreshYear: jest.fn() } as never,
     );
   });
 

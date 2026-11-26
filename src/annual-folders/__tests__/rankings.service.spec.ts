@@ -15,9 +15,11 @@ import { EvidenceScoreService } from '../score-calculators/evidence-score';
 import { WeightsResolverService } from '../score-calculators/weights-resolver';
 import { CompositeScoreService } from '../score-calculators/composite-score';
 import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
+import { AnnualRankingProgressSnapshotService } from '../../rankings/annual-ranking-progress/services/annual-ranking-progress-snapshot.service';
 
 describe('RankingsService', () => {
   let service: RankingsService;
+  const mockProgressSnapshot = { refreshYear: jest.fn() };
 
   const mockHierarchyService: {
     resolveAsOf: jest.Mock;
@@ -238,6 +240,10 @@ describe('RankingsService', () => {
         { provide: EvidenceScoreService, useValue: evidenceScore },
         { provide: WeightsResolverService, useValue: weightsResolver },
         { provide: CompositeScoreService, useValue: compositeScore },
+        {
+          provide: AnnualRankingProgressSnapshotService,
+          useValue: mockProgressSnapshot,
+        },
       ],
     }).compile();
 
@@ -1591,6 +1597,70 @@ describe('RankingsService', () => {
         expect.objectContaining({ attempts: 5 }),
       );
       expect(add.mock.calls[0][1].includeMemberRankings).toBeUndefined();
+      expect(mockProgressSnapshot.refreshYear).not.toHaveBeenCalled();
+    });
+
+    it('refreshes the progress snapshot after the inline club run (no Redis)', async () => {
+      (service as any).rankingsQueue = null;
+      mockProgressSnapshot.refreshYear.mockReset();
+      const order: string[] = [];
+      jest
+        .spyOn(service, 'recalculateRankings')
+        .mockImplementation(async () => {
+          order.push('club');
+          return { updated: 4 };
+        });
+      mockProgressSnapshot.refreshYear.mockImplementation(async () => {
+        order.push('snapshot');
+        return { yearId: 2026, upserted: 2, deleted: 0, failed: 0 };
+      });
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(
+        mockActiveYear,
+      );
+
+      await expect(
+        service.enqueueRecalculation({ yearId: 2026 }),
+      ).resolves.toEqual(
+        expect.objectContaining({ queued: false, rankings_updated: 4 }),
+      );
+      expect(order).toEqual(['club', 'snapshot']);
+      expect(mockProgressSnapshot.refreshYear).toHaveBeenCalledWith(2026);
+    });
+
+    it('keeps the inline club result when the snapshot refresh throws', async () => {
+      (service as any).rankingsQueue = null;
+      mockProgressSnapshot.refreshYear.mockReset();
+      jest
+        .spyOn(service, 'recalculateRankings')
+        .mockResolvedValue({ updated: 4 });
+      mockProgressSnapshot.refreshYear.mockRejectedValue(new Error('boom'));
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(
+        mockActiveYear,
+      );
+
+      await expect(
+        service.enqueueRecalculation({ yearId: 2026 }),
+      ).resolves.toEqual(
+        expect.objectContaining({ queued: false, rankings_updated: 4 }),
+      );
+    });
+
+    it('refreshes the progress snapshot in the cron fallback (no Redis)', async () => {
+      (service as any).rankingsQueue = null;
+      mockProgressSnapshot.refreshYear.mockReset();
+      jest
+        .spyOn(service, 'recalculateRankings')
+        .mockResolvedValue({ updated: 1 });
+      mockProgressSnapshot.refreshYear.mockResolvedValue({
+        yearId: 2026,
+        upserted: 1,
+        deleted: 0,
+        failed: 0,
+      });
+
+      await service.handleRankingsRecalculation();
+
+      expect(mockProgressSnapshot.refreshYear).toHaveBeenCalledWith(undefined);
     });
 
     it('enqueues includeMemberRankings for the member HTTP path', async () => {

@@ -57,6 +57,7 @@ describe('BackgroundJobsProcessor — dispatch', () => {
       module.get(RankingsService),
       module.get(DataExportService),
       module.get(CronRunLogger),
+      { refreshYear: jest.fn() } as never,
     );
 
     Object.defineProperty(processor, 'worker', {
