@@ -121,6 +121,69 @@ describe('MonthlyReportsService admin list authorization', () => {
     expect(mockPrisma.monthly_reports.findMany).not.toHaveBeenCalled();
   });
 
+  it('returns the club id of each report so two clubs with the same name stay apart', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['super-admin'] }),
+    );
+    const row = (reportId: string, clubId: number | null) => ({
+      monthly_report_id: reportId,
+      club_enrollment_id: `enrollment-${reportId}`,
+      month: 11,
+      year: 2026,
+      status: 'submitted',
+      generated_at: null,
+      submitted_at: null,
+      snapshot_data: null,
+      submitter: null,
+      club_enrollment: {
+        club_section: {
+          main_club_id: clubId,
+          club_types: { club_type_id: 2, name: 'Conquistadores' },
+          clubs:
+            clubId === null
+              ? null
+              : {
+                  name: 'Orión',
+                  local_field_id: 7,
+                  local_fields: { name: 'Campo Local' },
+                },
+        },
+      },
+    });
+    mockPrisma.monthly_reports.count.mockResolvedValue(3);
+    mockPrisma.monthly_reports.findMany.mockResolvedValue([
+      row('0b0f6f0e-1111-4111-8111-111111111111', 10),
+      row('0b0f6f0e-2222-4222-8222-222222222222', 11),
+      row('0b0f6f0e-3333-4333-8333-333333333333', null),
+    ]);
+
+    const result = await service.listForAdmin('super-admin-user', {});
+
+    expect(
+      result.items.map((item) => ({
+        id: item.monthly_report_id,
+        club_id: item.club_id,
+        club_name: item.club_name,
+      })),
+    ).toEqual([
+      {
+        id: '0b0f6f0e-1111-4111-8111-111111111111',
+        club_id: 10,
+        club_name: 'Orión',
+      },
+      {
+        id: '0b0f6f0e-2222-4222-8222-222222222222',
+        club_id: 11,
+        club_name: 'Orión',
+      },
+      {
+        id: '0b0f6f0e-3333-4333-8333-333333333333',
+        club_id: null,
+        club_name: null,
+      },
+    ]);
+  });
+
   it('forces union leadership scope to the actor union and allows narrower local-field filters', async () => {
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
       resolvedAuth({ roles: ['director-union'], unionId: 20 }),

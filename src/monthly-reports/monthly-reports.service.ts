@@ -831,6 +831,8 @@ export class MonthlyReportsService {
         status: r.status,
         generated_at: r.generated_at,
         submitted_at: r.submitted_at,
+        // Clients group reports by club with this id; the name is not unique.
+        club_id: section.main_club_id ?? null,
         club_name: section.clubs?.name ?? null,
         club_type: section.club_types?.name ?? null,
         club_type_id: section.club_types?.club_type_id ?? null,
