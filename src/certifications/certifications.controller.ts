@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Patch,
   Delete,
   Body,
   Param,
@@ -21,7 +20,6 @@ import {
 } from '@nestjs/swagger';
 import { CertificationsService } from './certifications.service';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
-import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { ListCertificationEnrollmentsDto } from './dto/list-certification-enrollments.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import {
@@ -269,52 +267,6 @@ export class UserCertificationsController {
     const data = await this.certificationsService.getCertificationProgress(
       userId,
       certificationId,
-    );
-    return {
-      status: 'success',
-      data,
-    };
-  }
-
-  @Patch('users/:userId/certifications/:certificationId/progress')
-  @RequirePermissions('user_certifications:manage')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
-  @ApiOperation({
-    summary: 'Actualizar progreso de una sección',
-    description:
-      'Marca una sección como completa/incompleta. Auto-completa módulo y certificación si todas las secciones/módulos están completos.',
-  })
-  @ApiParam({
-    name: 'userId',
-    description: 'UUID del usuario',
-    example: 'uuid-123',
-  })
-  @ApiParam({
-    name: 'certificationId',
-    description: 'ID de la certificación',
-    example: 1,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Progreso actualizado exitosamente',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Módulo o sección inválidos para esta certificación',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Inscripción en certificación no encontrada',
-  })
-  async updateProgress(
-    @Param('userId', ParseUuidParamPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
-    @Body() dto: UpdateCertificationProgressDto,
-  ) {
-    const data = await this.certificationsService.updateProgress(
-      userId,
-      certificationId,
-      dto,
     );
     return {
       status: 'success',

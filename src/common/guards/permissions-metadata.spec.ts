@@ -835,19 +835,6 @@ describe('Permissions metadata', () => {
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
-        UserCertificationsController.prototype.updateProgress,
-      ),
-    ).toEqual({ permissions: ['user_certifications:manage'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        UserCertificationsController.prototype.updateProgress,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
         UserCertificationsController.prototype.deleteCertification,
       ),
     ).toEqual({ permissions: ['user_certifications:manage'], mode: 'all' });

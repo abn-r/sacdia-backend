@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PaginationDto,
@@ -6,7 +6,6 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
-import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { ListCertificationEnrollmentsDto } from './dto/list-certification-enrollments.dto';
 import { Prisma } from '@prisma/client';
 import {
@@ -16,7 +15,6 @@ import {
 import {
   AppBadRequestException,
   AppConflictException,
-  AppException,
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
@@ -735,191 +733,6 @@ export class CertificationsService {
       enrollment_date: enrollment.enrollment_date,
       modules,
     };
-  }
-
-  /**
-   * Actualizar progreso de una sección
-   */
-  async updateProgress(
-    userId: string,
-    certificationId: number,
-    dto: UpdateCertificationProgressDto,
-  ) {
-    return await this.prisma.$transaction(async (tx) => {
-      // 1. Verificar que el usuario está inscrito
-      const enrollment = await tx.users_certifications.findFirst({
-        where: {
-          user_id: userId,
-          certification_id: certificationId,
-          active: true,
-        },
-      });
-
-      if (!enrollment) {
-        throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
-      }
-
-      // 1b. Las inscripciones con versión (motor configurable) ya no usan este
-      // endpoint legado; deben usar el flujo de requisitos por sección
-      // (CertificationRequirementsService: draft/submit).
-      if (enrollment.certification_version_id) {
-        throw new AppException(
-          ErrorCode.CERT_LEGACY_ENDPOINT_DEPRECATED,
-          HttpStatus.GONE,
-          { certification_version_id: enrollment.certification_version_id },
-        );
-      }
-
-      // 2. Validar que la sección pertenece al módulo y certificación
-      const section = await tx.certification_sections.findFirst({
-        where: {
-          section_id: dto.section_id,
-          module_id: dto.module_id,
-          certification_modules: {
-            certification_id: certificationId,
-          },
-        },
-      });
-
-      if (!section) {
-        throw new AppBadRequestException(ErrorCode.CERT_SECTION_INVALID);
-      }
-
-      // 3. Crear o actualizar registro de sección
-      const sectionProgressExists =
-        await tx.certification_section_progress.findFirst({
-          where: {
-            user_id: userId,
-            section_id: dto.section_id,
-          },
-        });
-
-      let sectionProgress;
-      if (sectionProgressExists) {
-        sectionProgress = await tx.certification_section_progress.update({
-          where: { progress_id: sectionProgressExists.progress_id },
-          data: {
-            completed: dto.completed,
-            completion_date: dto.completed ? new Date() : null,
-          },
-        });
-      } else {
-        sectionProgress = await tx.certification_section_progress.create({
-          data: {
-            user_id: userId,
-            section_id: dto.section_id,
-            module_id: dto.module_id,
-            certification_id: certificationId,
-            score: 0,
-            completed: dto.completed,
-            completion_date: dto.completed ? new Date() : null,
-          },
-        });
-      }
-
-      // 4. Verificar si el módulo está completo
-      const allSectionsInModule = await tx.certification_sections.findMany({
-        where: { module_id: dto.module_id },
-      });
-
-      const completedSectionsCount =
-        await tx.certification_section_progress.count({
-          where: {
-            user_id: userId,
-            section_id: { in: allSectionsInModule.map((s) => s.section_id) },
-            completed: true,
-          },
-        });
-
-      const moduleCompleted =
-        completedSectionsCount === allSectionsInModule.length;
-
-      // 5. Actualizar estado del módulo
-      const moduleProgressExists =
-        await tx.certification_module_progress.findFirst({
-          where: {
-            user_id: userId,
-            module_id: dto.module_id,
-          },
-        });
-
-      let moduleProgress;
-      if (moduleProgressExists) {
-        moduleProgress = await tx.certification_module_progress.update({
-          where: { progress_id: moduleProgressExists.progress_id },
-          data: {
-            completed: moduleCompleted,
-            completion_date: moduleCompleted ? new Date() : null,
-          },
-        });
-      } else {
-        moduleProgress = await tx.certification_module_progress.create({
-          data: {
-            user_id: userId,
-            module_id: dto.module_id,
-            certification_id: certificationId,
-            score: 0,
-            completed: moduleCompleted,
-            completion_date: moduleCompleted ? new Date() : null,
-          },
-        });
-      }
-
-      // 6. Verificar si la certificación está completa
-      const allModulesInCertification = await tx.certification_modules.findMany(
-        {
-          where: { certification_id: certificationId },
-        },
-      );
-
-      const completedModulesCount =
-        await tx.certification_module_progress.count({
-          where: {
-            user_id: userId,
-            module_id: {
-              in: allModulesInCertification.map((m) => m.module_id),
-            },
-            completed: true,
-          },
-        });
-
-      const certificationCompleted =
-        completedModulesCount === allModulesInCertification.length;
-
-      // 7. Actualizar estado de la certificación si está completa
-      if (certificationCompleted) {
-        await tx.users_certifications.update({
-          where: { enrollment_id: enrollment.enrollment_id },
-          data: {
-            completion_status: true,
-            completion_date: new Date(),
-          },
-        });
-      }
-
-      // 8. Calcular porcentaje de progreso
-      const progressPercentage =
-        allModulesInCertification.length > 0
-          ? (completedModulesCount / allModulesInCertification.length) * 100
-          : 0;
-
-      return {
-        section_progress_id: sectionProgress.progress_id,
-        module_id: dto.module_id,
-        section_id: dto.section_id,
-        completed: sectionProgress.completed,
-        completion_date: sectionProgress.completion_date,
-        module_progress: {
-          module_id: moduleProgress.module_id,
-          completed: moduleProgress.completed,
-          completion_date: moduleProgress.completion_date,
-        },
-        certification_progress: {
-          progress_percentage: Math.round(progressPercentage * 10) / 10,
-          completion_status: certificationCompleted,
-        },
-      };
-    });
   }
 
   /**
