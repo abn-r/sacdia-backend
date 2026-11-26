@@ -34,6 +34,8 @@ import { MemberRankingsModule } from '../rankings/member-rankings/member-ranking
 import { SectionRankingsModule } from '../rankings/section-rankings/section-rankings.module';
 // 8.4-A Task 14 — Admin CRUD module for enrollment_ranking_weights table.
 import { MemberRankingWeightsModule } from '../rankings/member-ranking-weights/member-ranking-weights.module';
+// Annual-progress snapshot refresh runs inline after club rankings when Redis is down.
+import { AnnualRankingProgressModule } from '../rankings/annual-ranking-progress/annual-ranking-progress.module';
 
 @Module({
   imports: [
@@ -45,6 +47,7 @@ import { MemberRankingWeightsModule } from '../rankings/member-ranking-weights/m
     MemberRankingsModule, // Task 12 — REST endpoints for member rankings
     SectionRankingsModule, // Task 13 — REST endpoints for section rankings + SectionAggregationService owner
     MemberRankingWeightsModule, // Task 14 — Admin CRUD for enrollment_ranking_weights
+    AnnualRankingProgressModule,
   ],
   controllers: [
     AnnualFolderTemplatesController,

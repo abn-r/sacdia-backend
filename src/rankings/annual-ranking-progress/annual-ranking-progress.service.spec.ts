@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AnnualRankingConfigService } from './annual-ranking-config.service';
 import { RankingTierCalculatorService } from './services/ranking-tier-calculator.service';
 import { AnnualRankingScoreRegistryService } from './services/annual-ranking-score-registry.service';
+import { AnnualRankingPointsService } from './services/annual-ranking-points.service';
 import { AppForbiddenException } from '../../common/errors/app.exception';
 import type { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
 
@@ -264,6 +265,7 @@ describe('AnnualRankingProgressService', () => {
     const module = await Test.createTestingModule({
       providers: [
         AnnualRankingProgressService,
+        AnnualRankingPointsService,
         { provide: PrismaService, useValue: prisma },
         { provide: AnnualRankingConfigService, useValue: configService },
         { provide: RankingTierCalculatorService, useValue: tierCalculator },

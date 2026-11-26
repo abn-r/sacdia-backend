@@ -64,6 +64,7 @@ describe('BackgroundJobsProcessor — manual trigger hand-off', () => {
       rankings as unknown as RankingsService,
       {} as unknown as DataExportService,
       cronLogger as unknown as CronRunLogger,
+      { refreshYear: jest.fn() } as never,
     );
   });
 

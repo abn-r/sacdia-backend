@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AnnualRankingConfigService } from './annual-ranking-config.service';
 import { RankingTierCalculatorService } from './services/ranking-tier-calculator.service';
 import { AnnualRankingScoreRegistryService } from './services/annual-ranking-score-registry.service';
+import { AnnualRankingPointsService } from './services/annual-ranking-points.service';
 
 const LOCAL_FIELD_ID = 4;
 const YEAR_ID = 1;
@@ -187,6 +188,7 @@ describe('AnnualRankingsService', () => {
     const module = await Test.createTestingModule({
       providers: [
         AnnualRankingsService,
+        AnnualRankingPointsService,
         RankingTierCalculatorService,
         { provide: PrismaService, useValue: prisma },
         { provide: AnnualRankingConfigService, useValue: configService },
