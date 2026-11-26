@@ -147,7 +147,7 @@ describe('/auth/me stays additive (union-division-app-surface B8, S1.10)', () =>
     }
   });
 
-  it('keeps the shape of the authorization summary: same four blocks, same territory fields', () => {
+  it('keeps the shape of the authorization summary: same four blocks, same territory fields (plus name)', () => {
     const summary = computeActorAuthorizationSummary(
       clublessSupervisor('director-union', { union: 3, division: 1 }),
     );
@@ -162,6 +162,7 @@ describe('/auth/me stays additive (union-division-app-surface B8, S1.10)', () =>
       'division_id',
       'level',
       'local_field_id',
+      'name',
       'union_id',
     ]);
     expect(Array.isArray(summary.capabilities)).toBe(true);

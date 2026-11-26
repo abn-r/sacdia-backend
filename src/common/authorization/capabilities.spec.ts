@@ -131,6 +131,7 @@ const ACTORS: Array<{
     fixture: resolvedFor({ globalRoles: ['super-admin'] }),
     territory: {
       level: 'all',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -184,6 +185,7 @@ const ACTORS: Array<{
     fixture: resolvedFor({ globalRoles: ['admin'] }),
     territory: {
       level: 'unconfigured',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -223,6 +225,7 @@ const ACTORS: Array<{
     }),
     territory: {
       level: 'local_field',
+      name: 'node-3',
       division_id: null,
       union_id: null,
       local_field_id: 3,
@@ -255,6 +258,7 @@ const ACTORS: Array<{
     }),
     territory: {
       level: 'local_field',
+      name: 'node-3',
       division_id: 1,
       union_id: 2,
       local_field_id: 3,
@@ -301,6 +305,7 @@ const ACTORS: Array<{
     }),
     territory: {
       level: 'union',
+      name: 'node-2',
       division_id: 1,
       union_id: 2,
       local_field_id: null,
@@ -336,6 +341,7 @@ const ACTORS: Array<{
     }),
     territory: {
       level: 'division',
+      name: 'node-1',
       division_id: 1,
       union_id: null,
       local_field_id: null,
@@ -363,6 +369,7 @@ const ACTORS: Array<{
     fixture: resolvedFor({ globalRoles: ['pastor'] }),
     territory: {
       level: 'open',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -382,6 +389,7 @@ const ACTORS: Array<{
     fixture: resolvedFor({ globalRoles: ['user', 'coordinator'] }),
     territory: {
       level: 'open',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -404,6 +412,7 @@ const ACTORS: Array<{
     }),
     territory: {
       level: 'open',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -433,6 +442,7 @@ const ACTORS: Array<{
     }),
     territory: {
       level: 'open',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -455,6 +465,7 @@ const ACTORS: Array<{
     fixture: resolvedFor({ globalRoles: ['user'], club: { role: 'member' } }),
     territory: {
       level: 'open',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -467,6 +478,7 @@ const ACTORS: Array<{
     fixture: resolvedFor({}),
     territory: {
       level: 'open',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -481,6 +493,7 @@ const ACTORS: Array<{
     ),
     territory: {
       level: 'open',
+      name: null,
       division_id: null,
       union_id: null,
       local_field_id: null,
@@ -703,6 +716,7 @@ describe('capabilities catalog', () => {
         computeTerritory(resolvedFor({ globalRoles: ['director-lf'] })),
       ).toEqual({
         level: 'unconfigured',
+        name: null,
         division_id: null,
         union_id: null,
         local_field_id: null,
@@ -746,6 +760,7 @@ describe('capabilities catalog', () => {
         ),
       ).toEqual({
         level: 'union',
+        name: 'node-2',
         division_id: null,
         union_id: 2,
         local_field_id: 3,
@@ -768,6 +783,7 @@ describe('capabilities catalog', () => {
         capabilities: [],
         territory: {
           level: 'open',
+          name: null,
           division_id: null,
           union_id: null,
           local_field_id: null,
@@ -1049,5 +1065,36 @@ describe('territorial supervision capabilities', () => {
         }),
       ),
     ).toContain('supervision.app_view');
+  });
+});
+
+describe('computeTerritory name', () => {
+  it('is the name of the unit at the actor level, not of a parent', () => {
+    const union = resolvedFor({
+      globalRoles: ['director-union'],
+      global: { division: 1, union: 2 },
+    });
+    expect(computeTerritory(union).name).toBe('node-2');
+
+    const division = resolvedFor({
+      globalRoles: ['director-dia'],
+      global: { division: 1 },
+    });
+    expect(computeTerritory(division).name).toBe('node-1');
+  });
+
+  it('is null when the loaded scope node has no name', () => {
+    const union = resolvedFor({
+      globalRoles: ['director-union'],
+      global: { division: 1, union: 2 },
+    });
+    const scope = union.authorization.effective.scope.global;
+    scope.union = { id: 2, name: null };
+
+    expect(computeTerritory(union)).toMatchObject({
+      level: 'union',
+      name: null,
+      union_id: 2,
+    });
   });
 });

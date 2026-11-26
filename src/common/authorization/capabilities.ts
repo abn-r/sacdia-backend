@@ -48,6 +48,12 @@ export type TerritoryLevel = ActorTerritoryScope['level'];
 
 export type ActorTerritory = {
   level: TerritoryLevel;
+  /**
+   * Canonical (Spanish) name of the unit at `level`: division, union or local
+   * field. Null for `all` / `open` / `unconfigured` or when the loaded scope
+   * node carries no name.
+   */
+  name: string | null;
   division_id: number | null;
   union_id: number | null;
   local_field_id: number | null;
@@ -403,8 +409,18 @@ export function computeTerritory(
     scope.level === 'local_field'
       ? scope
       : {};
+  const globalScope = resolved.authorization?.effective?.scope?.global;
+  const node =
+    scope.level === 'division'
+      ? globalScope?.division
+      : scope.level === 'union'
+        ? globalScope?.union
+        : scope.level === 'local_field'
+          ? globalScope?.local_field
+          : undefined;
   return {
     level: scope.level,
+    name: node?.name ?? null,
     division_id: ids.divisionId ?? null,
     union_id: ids.unionId ?? null,
     local_field_id: ids.localFieldId ?? null,
