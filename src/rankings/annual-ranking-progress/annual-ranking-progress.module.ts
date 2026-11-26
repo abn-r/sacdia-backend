@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AnnualRankingsController } from './annual-rankings.controller';
 import { AnnualRankingsService } from './annual-rankings.service';
+import { AnnualRankingTerritorySummaryService } from './annual-ranking-territory-summary.service';
 import { AnnualRankingProgressController } from './annual-ranking-progress.controller';
 import { AnnualRankingProgressService } from './annual-ranking-progress.service';
 import { AnnualRankingConfigController } from './annual-ranking-config.controller';
@@ -36,6 +37,7 @@ import { SacdiaOperationalUsageScoreService } from '../../annual-folders/score-c
   providers: [
     AnnualRankingProgressService,
     AnnualRankingsService,
+    AnnualRankingTerritorySummaryService,
     AnnualRankingConfigService,
     RankingTiersService,
     RankingTierCalculatorService,

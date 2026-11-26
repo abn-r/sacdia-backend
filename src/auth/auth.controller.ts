@@ -430,12 +430,20 @@ export class AuthController {
                         'local_field',
                       ],
                     },
+                    name: {
+                      type: 'string',
+                      nullable: true,
+                      description:
+                        'Nombre canónico (es) de la unidad del nivel: división, unión o campo local. null para all/open/unconfigured o si no se resolvió.',
+                      example: 'Unión Mexicana del Sur',
+                    },
                     division_id: { type: 'number', nullable: true },
                     union_id: { type: 'number', nullable: true },
                     local_field_id: { type: 'number', nullable: true },
                   },
                   required: [
                     'level',
+                    'name',
                     'division_id',
                     'union_id',
                     'local_field_id',

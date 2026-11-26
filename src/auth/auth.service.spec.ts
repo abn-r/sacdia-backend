@@ -2620,6 +2620,7 @@ describe('AuthService', () => {
         );
         expect(authorization.territory).toEqual({
           level: 'local_field',
+          name: 'Campo',
           division_id: null,
           union_id: 2,
           local_field_id: 3,
@@ -2692,6 +2693,7 @@ describe('AuthService', () => {
         ]);
         expect(authorization.territory).toEqual({
           level: 'open',
+          name: null,
           division_id: null,
           union_id: null,
           local_field_id: null,
@@ -2718,6 +2720,7 @@ describe('AuthService', () => {
         expect(authorization.capabilities).toEqual([]);
         expect(authorization.territory).toEqual({
           level: 'open',
+          name: null,
           division_id: null,
           union_id: null,
           local_field_id: null,
@@ -3816,6 +3819,7 @@ describe('AuthService', () => {
         capabilities: [],
         territory: {
           level: 'open',
+          name: null,
           division_id: null,
           union_id: null,
           local_field_id: null,
