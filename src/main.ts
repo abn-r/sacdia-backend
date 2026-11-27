@@ -95,7 +95,6 @@ async function bootstrap() {
         process.env.RENDER_GIT_COMMIT ||
         undefined,
       tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-      profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
       beforeSend(event) {
         // Strip sensitive request headers
         if (event.request?.headers) {
