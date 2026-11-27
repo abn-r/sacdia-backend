@@ -39,8 +39,23 @@ describe('configurable certifications schema', () => {
         'certification_evidences',
         'certification_review_events',
         'certification_closeout_evidences',
-        'certification_module_progress',
       ]),
+    );
+  });
+
+  it('no longer has the legacy per-module progress table', () => {
+    const modelNames = Prisma.dmmf.datamodel.models.map((model) => model.name);
+    const dropSql = readFileSync(
+      join(
+        process.cwd(),
+        'prisma/migrations/20261127090000_drop_certification_module_progress/migration.sql',
+      ),
+      'utf8',
+    );
+
+    expect(modelNames).not.toContain('certification_module_progress');
+    expect(dropSql).toMatch(
+      /DROP TABLE IF EXISTS\s+"certification_module_progress";/,
     );
   });
 

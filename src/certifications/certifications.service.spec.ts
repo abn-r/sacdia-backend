@@ -30,12 +30,6 @@ const createTxMock = () => ({
     update: jest.fn(),
     count: jest.fn(),
   },
-  certification_module_progress: {
-    findFirst: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    count: jest.fn(),
-  },
   certification_modules: {
     findMany: jest.fn(),
   },
@@ -65,10 +59,6 @@ const mockPrisma = {
   },
   enrollments: {
     findFirst: jest.fn(),
-  },
-  certification_module_progress: {
-    count: jest.fn(),
-    findMany: jest.fn(),
   },
   certification_section_progress: {
     findMany: jest.fn(),
