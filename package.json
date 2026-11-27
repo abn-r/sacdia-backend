@@ -178,7 +178,8 @@
     "moduleNameMapper": {
       "^better-auth$": "<rootDir>/../test/mocks/better-auth.mock.ts",
       "^better-auth/(.*)$": "<rootDir>/../test/mocks/better-auth.mock.ts",
-      "^#async_hooks$": "<rootDir>/../test/mocks/async-hooks.mock.ts"
+      "^#async_hooks$": "<rootDir>/../test/mocks/async-hooks.mock.ts",
+      "^fontkit$": "<rootDir>/../test/mocks/fontkit.mock.ts"
     }
   },
   "pnpm": {

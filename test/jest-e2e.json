@@ -13,7 +13,8 @@
     "^src/(.*)$": "<rootDir>/../src/$1",
     "^better-auth$": "<rootDir>/mocks/better-auth.mock.ts",
     "^better-auth/(.*)$": "<rootDir>/mocks/better-auth.mock.ts",
-    "^#async_hooks$": "<rootDir>/mocks/async-hooks.mock.ts"
+    "^#async_hooks$": "<rootDir>/mocks/async-hooks.mock.ts",
+    "^fontkit$": "<rootDir>/mocks/fontkit.mock.ts"
   },
   "setupFilesAfterEnv": ["<rootDir>/setup.ts"],
   "testTimeout": 30000,
